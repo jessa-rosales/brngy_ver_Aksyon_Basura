@@ -3,6 +3,7 @@ import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useNotifications } from '../context/NotificationContext';
 import { NavigationContainer } from '@react-navigation/native';
+import { StatusBar } from 'react-native';
 import { 
   View, 
   Text, 
@@ -71,12 +72,12 @@ const getHeaderOptions = (role) => ({
   headerShown: true,
   headerTitle: () => <CustomHeaderTitle role={role} />, 
   headerStyle: styles.headerStyle,
-  headerTitleAlign: 'left', // Force left alignment for consistency across OS
-  // Manually lock the status bar height to prevent the "jump" during transitions
-  headerStatusBarHeight: Platform.OS === 'android' ? 35 : undefined,
+  headerTitleAlign: 'left',
+  // Change: Remove the manual StatusBarHeight unless absolutely necessary 
+  // or use a consistent value for both Stack and Tab
+  headerStatusBarHeight: Platform.OS === 'android' ? undefined : undefined, 
   headerTitleContainerStyle: {
-    marginLeft: Platform.OS === 'ios' ? 0 : 10, // Fine-tune horizontal position
-    bottom: Platform.OS === 'ios' ? 0 : -4,    // Fine-tune vertical position
+    marginLeft: Platform.OS === 'ios' ? 0 : 5, // Adjusted for Android alignment
   },
   tabBarActiveTintColor: themeColor,
   tabBarInactiveTintColor: '#94a3b8',
@@ -159,11 +160,34 @@ const DriverDashboard = () => <StaffTabs role="driver" />;
 const AppNavigator = () => {
   return (
     <NavigationContainer>
-      <Stack.Navigator initialRouteName="Login" screenOptions={{ headerShown: false }}>
+      <StatusBar barStyle="light-content" backgroundColor="#E3F3DF" />
+      <Stack.Navigator 
+        initialRouteName="Login" 
+        screenOptions={{ 
+          headerShown: false, // Default to hidden
+          headerMode: 'screen' // Forces headers to animate with the screen
+        }}
+      >
         <Stack.Screen name="Login" component={MobileLogin} />
-        <Stack.Screen name="Dashboard" component={MainTabs} />
-        <Stack.Screen name="CollectorDashboard" component={CollectorDashboard} />
-        <Stack.Screen name="DriverDashboard" component={DriverDashboard} />
+        
+        {/* Disable Stack header for these because they have their own Tab headers */}
+        <Stack.Screen 
+          name="Dashboard" 
+          component={MainTabs} 
+          options={{ headerShown: false }} 
+        />
+        <Stack.Screen 
+          name="CollectorDashboard" 
+          component={CollectorDashboard} 
+          options={{ headerShown: false }} 
+        />
+        <Stack.Screen 
+          name="DriverDashboard" 
+          component={DriverDashboard} 
+          options={{ headerShown: false }} 
+        />
+
+        {/* Keep it true for standalone screens that are NOT tabs */}
         <Stack.Screen 
           name="UserReports" 
           component={UserReportsScreen} 
@@ -171,16 +195,11 @@ const AppNavigator = () => {
             headerShown: true,
             headerTitle: () => <CustomHeaderTitle role="citizen" />,
             headerStyle: styles.headerStyle,
-            headerStatusBarHeight: Platform.OS === 'android' ? 45 : undefined,
             headerTintColor: '#FFFFFF',
           }}
         />
         <Stack.Screen name="EditProfile" component={EditProfileScreen} options={{ headerShown: true, title: 'Edit Profile' }} />
-        <Stack.Screen 
-          name="LiveMapScreen" 
-          component={LiveMapScreen} 
-          options={{ headerShown: false, animation: 'slide_from_right' }} 
-        />
+        <Stack.Screen name="LiveMapScreen" component={LiveMapScreen} options={{ headerShown: false }} />
       </Stack.Navigator>
     </NavigationContainer>
   );
