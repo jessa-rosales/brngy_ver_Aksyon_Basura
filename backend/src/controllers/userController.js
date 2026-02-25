@@ -4,22 +4,47 @@ const bcrypt = require('bcrypt');
 const pool = require('../db');
 require('dotenv').config();
 
+// ✅ NEW: In-Memory tracker for failed login attempts
+const loginTracker = new Map();
+
 exports.loginUser = async (req, res) => {
     const { email, password, loginType } = req.body;
+    
     try {
-        const user = await UserModel.findByEmail(email);
-        // ✅ FIXED: Changed string to object
-        if (!user) return res.status(401).json({ message: "Invalid credentials" });
+        // 1. Check if user is currently locked out
+        let tracker = loginTracker.get(email) || { attempts: 0, lockoutUntil: null };
 
+        if (tracker.lockoutUntil && tracker.lockoutUntil > Date.now()) {
+            const remainingMinutes = Math.ceil((tracker.lockoutUntil - Date.now()) / 60000);
+            return res.status(429).json({ 
+                message: `Too many failed attempts. Account locked for ${remainingMinutes} more minute(s).` 
+            });
+        }
+
+        // 2. Fetch User from DB
+        const user = await UserModel.findByEmail(email);
+        
+        // 3. If user doesn't exist, treat as a failed attempt to prevent email guessing
+        if (!user) {
+            return handleFailedAttempt(email, tracker, res);
+        }
+
+        // 4. Check if account is Inactive
         if (user.status === 'Inactive') {
             return res.status(403).json({ message: "Your account is inactive. Contact the administrator." });
         }
 
+        // 5. Compare Password
         const isMatch = await bcrypt.compare(password, user.password);
+        
         if (isMatch) {
+            // Check Role Restriction for Website
             if (loginType === 'website' && user.role !== 'Admin') {
                 return res.status(403).json({ message: "Access Denied: Administrators only." });
             }
+
+            // ✅ SUCCESS: Clear their record from the tracker
+            loginTracker.delete(email);
 
             const payload = { user: { id: user.user_id, role: user.role } };
             const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '24h' });
@@ -27,11 +52,11 @@ exports.loginUser = async (req, res) => {
             const { password: _, ...userProfile } = user; 
             res.json({ message: "Login success", token, user: userProfile });
         } else {
-            // ✅ FIXED: Changed string to object
-            res.status(401).json({ message: "Invalid credentials" });
+            // ❌ FAILED PASSWORD: Track the attempt
+            return handleFailedAttempt(email, tracker, res);
         }
     } catch (err) {
-        // ✅ FIXED: Changed .send() to .json()
+        console.error("Login Error:", err);
         res.status(500).json({ message: "Server Error" });
     }
 };
@@ -169,6 +194,27 @@ exports.verifyToken = async (req, res) => {
     } catch (err) {
         // ✅ FIXED: Changed .send() to .json()
         res.status(500).json({ message: "Server Error" });
+    }
+};
+
+// ✅ NEW: Helper function to manage failed attempts
+function handleFailedAttempt(email, tracker, res) {
+    tracker.attempts += 1;
+
+    if (tracker.attempts >= 5) {
+        // Lockout for 5 minutes (5 * 60 * 1000 milliseconds)
+        tracker.lockoutUntil = Date.now() + (5 * 60 * 1000); 
+        loginTracker.set(email, tracker); 
+        
+        return res.status(429).json({ 
+            message: "Too many failed attempts. Account locked for 5 minutes." 
+        });
+    } else {
+        loginTracker.set(email, tracker); 
+        
+        return res.status(401).json({ 
+            message: "Invalid credentials." 
+        });
     }
 };
 
