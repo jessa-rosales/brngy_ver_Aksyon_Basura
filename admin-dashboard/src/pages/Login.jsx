@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { authService } from '../services/authService';
-import { useUser } from '../context/UserContext'; // ✅ 1. Import useUser
+import { useUser } from '../context/UserContext'; 
 import { ShieldAlert, AlertCircle, Eye, EyeOff } from 'lucide-react'; 
+import { motion, AnimatePresence } from 'framer-motion'; // Added for smooth error animation
 
 const Login = () => {
   const [email, setEmail] = useState('');
@@ -10,43 +11,70 @@ const Login = () => {
   const [showPassword, setShowPassword] = useState(false); 
   const [error, setError] = useState({ msg: '', type: '' });
   const navigate = useNavigate();
-  const { setUser } = useUser(); // ✅ 2. Destructure setUser
+  const { setUser } = useUser(); 
 
   const handleLogin = async (e) => {
     e.preventDefault();
-    setError({ msg: '', type: 'auth' });
+    setError({ msg: '', type: '' });
 
     try {
       const response = await authService.login({ email, password, loginType: 'website' });
-      const data = await response.json();
+      
+      // Safely parse JSON in case the server returns an HTML error page
+      let data = {};
+      try {
+        data = await response.json();
+      } catch (parseError) {
+        console.error("Response is not JSON");
+      }
 
-      if (response.status === 403) {
-        setError({ 
-          msg: data || "Access Denied: You do not have permission to access this portal.", 
-          type: 'security' 
-        });
+      // 1. HANDLE HTTP ERRORS (401 Unauthorized, 403 Forbidden)
+      if (!response.ok) {
+        if (response.status === 401) {
+          setError({ msg: "Invalid email or password. Please try again.", type: 'auth' });
+          return;
+        }
+        if (response.status === 403) {
+          setError({ 
+            msg: data.message || "Access Denied: You do not have permission to access this portal.", 
+            type: 'security' 
+          });
+          return;
+        }
+        setError({ msg: data.message || "An unexpected error occurred. Please try again.", type: 'auth' });
         return;
       }
 
-      if (response.status === 401) {
-        setError({ msg: data || "Invalid email or password.", type: 'auth' });
-        return;
+      // 2. VERIFY USER PROPERTIES IF LOGIN IS TECHNICALLY SUCCESSFUL
+      if (data.user) {
+        // Check for Inactive Account
+        if (data.user.status === 'Inactive') {
+          setError({ 
+            msg: "Your account is inactive. Please contact the System Administrator to reactivate it.", 
+            type: 'security' 
+          });
+          return;
+        }
+
+        // Check for correct Role (Block Citizens, Drivers, Collectors from Web)
+        if (data.user.role !== 'Admin') {
+          setError({ 
+            msg: "Access Denied: This portal is for Administrators only. Please use the mobile app to access your account.", 
+            type: 'security' 
+          });
+          return;
+        }
       }
 
-      if (response.ok) {
-        // ✅ 3. Update the Global State (Crucial!)
-        // This tells the whole app WHO is logged in immediately 
-        // without waiting for a browser refresh.
-        setUser(data.user); 
-
-        // 4. Save to storage for persistence
-        localStorage.setItem("token", data.token);
-        localStorage.setItem("userProfile", JSON.stringify(data.user));
-        
-        navigate('/dashboard');
-      }
+      // 3. SUCCESS - ALL CHECKS PASSED
+      setUser(data.user); 
+      localStorage.setItem("token", data.token);
+      localStorage.setItem("userProfile", JSON.stringify(data.user));
+      navigate('/dashboard');
+      
     } catch (err) {
-      setError({ msg: "Network error. Please check your server.", type: 'network' });
+      console.error("Login Error:", err);
+      setError({ msg: "Network error. Please check if the server is running.", type: 'network' });
     }
   };
 
@@ -96,19 +124,29 @@ const Login = () => {
             <p className="text-gray-500 mt-2 text-sm lg:text-base">Sign in to your Administrator Dashboard</p>
           </div>
 
-          {error.msg && (
-            <div className={`flex items-start gap-3 px-4 py-3 rounded-xl border mb-6 animate-bounce-short ${
-              error.type === 'security' 
-                ? 'bg-amber-50 border-amber-200 text-amber-800' 
-                : 'bg-red-50 border-red-200 text-red-700'
-            }`}>
-              {error.type === 'security' ? <ShieldAlert className="shrink-0 mt-0.5" size={18} /> : <AlertCircle className="shrink-0 mt-0.5" size={18} />}
-              <div className="text-sm font-medium">
-                <strong className="block">{error.type === 'security' ? 'Security Alert' : 'Login Error'}</strong>
-                {error.msg}
-              </div>
-            </div>
-          )}
+          {/* ANIMATED ERROR NOTIFICATION */}
+          <AnimatePresence>
+            {error.msg && (
+              <motion.div 
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className={`flex items-start gap-3 px-4 py-3 rounded-xl border mb-6 ${
+                  error.type === 'security' 
+                    ? 'bg-amber-50 border-amber-200 text-amber-800' 
+                    : 'bg-red-50 border-red-200 text-red-700'
+                }`}
+              >
+                {error.type === 'security' ? <ShieldAlert className="shrink-0 mt-0.5" size={18} /> : <AlertCircle className="shrink-0 mt-0.5" size={18} />}
+                <div className="text-sm font-medium">
+                  <strong className="block mb-0.5">
+                    {error.type === 'security' ? 'Access Restricted' : 'Login Issue'}
+                  </strong>
+                  {error.msg}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           <form onSubmit={handleLogin} className="space-y-5">
             <div>
@@ -161,8 +199,8 @@ const Login = () => {
           </form>
 
           <div className="mt-8 pt-6 border-t border-gray-200 text-center">
-            <p className="text-xs text-gray-400 uppercase tracking-wide">
-              Secure access for authorized personnel only
+            <p className="text-xs text-gray-400 uppercase tracking-wide flex items-center justify-center gap-1.5">
+              <ShieldAlert size={14} /> Secure access for authorized personnel only
             </p>
           </div>
           

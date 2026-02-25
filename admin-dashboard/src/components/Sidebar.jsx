@@ -17,15 +17,19 @@ const Sidebar = ({ isCollapsed, setIsCollapsed }) => {
 
   // ✅ 3. UPDATED LOGOUT LOGIC
   const handleConfirmLogout = () => {
-    // A. Clear React State first (This stops the "refresh" requirement)
-    setUser(null); 
-    
-    // B. Clear LocalStorage and redirect via service
+    // 1. Clear LocalStorage via your service
     authService.logout(); 
+
+    // 2. Clear local lockout data
+    localStorage.removeItem('loginAttempts');
+    localStorage.removeItem('lockoutExpiry');
     
-    // C. Close modal and navigate
+    // 3. Close the modal
     setShowLogoutModal(false);
-    navigate('/login');
+    
+    // 4. Force a hard browser redirect. 
+    // This bypasses the AdminRoute kicking you to '/'
+    window.location.href = '/admin-portal-access';
   };
 
   const menuItems = [

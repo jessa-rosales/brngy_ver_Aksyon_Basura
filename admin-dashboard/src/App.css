@@ -1,9 +1,63 @@
+/* Keep your root constraints */
 #root {
   max-width: 1280px;
   margin: 0 auto;
-  padding: 2rem;
   text-align: center;
 }
+
+/* --- CUSTOM LOADER ANIMATIONS --- */
+
+/* The pulsing glow behind your logo during loading */
+@keyframes pulse-glow {
+  0%, 100% { 
+    box-shadow: 0 0 40px rgba(16, 185, 129, 0.2); 
+    transform: scale(1);
+  }
+  50% { 
+    box-shadow: 0 0 70px rgba(16, 185, 129, 0.5); 
+    transform: scale(1.05);
+  }
+}
+
+.pulse-glow {
+  animation: pulse-glow 2s infinite ease-in-out;
+}
+
+/* Custom Cursor Styles */
+.custom-cursor {
+  width: 8px;
+  height: 8px;
+  background-color: #10b981; /* Emerald 500 */
+  border-radius: 50%;
+  position: fixed;
+  pointer-events: none;
+  z-index: 9999;
+  transition: transform 0.1s ease-out;
+}
+
+.custom-cursor-ring {
+  width: 40px;
+  height: 40px;
+  border: 2px solid rgba(16, 185, 129, 0.5);
+  border-radius: 50%;
+  position: fixed;
+  pointer-events: none;
+  z-index: 9998;
+  transition: all 0.15s ease-out;
+}
+
+/* Hide default cursor on the whole page for a cleaner look */
+/* Or keep it and just hide it on specific buttons */
+a, button, .group {
+  cursor: none !important;
+}
+
+/* Ensure the loader is always on top of the custom cursor */
+.fixed.inset-0.z-\[200\] {
+  cursor: auto;
+}
+
+/* --- LOGO & HOVER EFFECTS --- */
 
 .logo {
   height: 6em;
@@ -11,32 +65,42 @@
   will-change: filter;
   transition: filter 300ms;
 }
+
+/* Updated hover to match your Emerald/Green theme */
 .logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafbaa);
+  filter: drop-shadow(0 0 2em rgba(16, 185, 129, 0.6));
 }
 
 @keyframes logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  a:nth-of-type(2) .logo {
-    animation: logo-spin infinite 20s linear;
+  /* This spins the ring around the loader in your LandingPage code */
+  .loader-ring {
+    animation: logo-spin infinite 2s linear;
   }
 }
+
+/* --- CLEANUP & UTILITIES --- */
 
 .card {
   padding: 2em;
 }
 
-.read-the-docs {
-  color: #888;
+/* Hide scrollbar during loading to prevent "jumping" */
+body.loading {
+  overflow: hidden;
+}
+
+/* Smooth scrolling for the entire page */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Custom selection color to match Aksyon Basura emerald */
+::selection {
+  background-color: rgba(16, 185, 129, 0.3);
+  color: #ffffff;
 }
