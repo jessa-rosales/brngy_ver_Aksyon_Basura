@@ -20,13 +20,37 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ],
+      "package": "com.jejerogo.mobileapp"
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      [
+        "@rnmapbox/maps",
+        {
+          "RNMapboxMapsImpl": "mapbox",
+          "RNMAPBOX_MAPS_DOWNLOAD_TOKEN": "sk.eyJ1IjoiamVnby1ybyIsImEiOiJjbW0wdTZja3kwMmZqMm9yNDI4Z2l4aTVoIn0.wm87QTYEXQ9PFedk751yaQ"
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationAlwaysPermission": "Allow Aksyon Basura to track your route for waste collection."
+        }
+      ]
     ]
   }
 }

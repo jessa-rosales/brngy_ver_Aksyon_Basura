@@ -5,3 +5,18 @@ mobile-app/node_modules/
 .DS_Store
 dist/
 build/
+
+# Android native build artifacts
+android/build/
+android/.gradle/
+android/app/build/
+android/local.properties
+
+# Secrets and Keys (CRITICAL)
+*.keystore
+*.jks
+google-services.json
+
+# Environment variables
+.env
+.env.local
