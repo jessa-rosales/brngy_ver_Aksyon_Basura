@@ -119,6 +119,7 @@ const getAllReports = async (req, res) => {
                 ) AS BOOLEAN) AS has_attended
             FROM citizen_reports r
             LEFT JOIN users u ON r.reporter_id = u.user_id -- ✅ THE JOIN LOGIC
+            WHERE r.is_archived = false -- ✅ FILTER OUT ARCHIVED REPORTS
             ORDER BY r.created_at DESC;
         `;
         
@@ -174,14 +175,23 @@ const updateReportStatus = async (req, res) => {
     }
 };
 
-// 5. Delete Report
+// 5. Delete/Archive Report
 const deleteReport = async (req, res) => {
     const { id } = req.params;
     try {
-        await pool.query("DELETE FROM citizen_reports WHERE report_id = $1", [id]);
-        res.status(200).json({ success: true, message: "Report deleted successfully" });
+        // ✅ CHANGED TO UPDATE (SOFT DELETE / ARCHIVE)
+        const result = await pool.query(
+            "UPDATE citizen_reports SET is_archived = true WHERE report_id = $1 RETURNING *", 
+            [id]
+        );
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ success: false, message: "Report not found" });
+        }
+
+        res.status(200).json({ success: true, message: "Report moved to Archive Center" });
     } catch (error) {
-        console.error("Delete Error:", error);
+        console.error("Archive Error:", error);
         res.status(500).json({ success: false, message: "Server Error" });
     }
 };

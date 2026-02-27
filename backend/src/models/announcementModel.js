@@ -21,6 +21,7 @@ const announcementModel = {
       FROM announcements a
       LEFT JOIN users u1 ON a.author_id = u1.user_id
       LEFT JOIN users u2 ON a.last_edited_by = u2.user_id
+      WHERE a.is_archived = false -- ✅ FILTER OUT ARCHIVED
       ORDER BY a.date_published DESC
     `;
     const result = await pool.query(query);
@@ -45,6 +46,14 @@ const announcementModel = {
     const values = [title, content, ann_photo, category, priority, status, last_edited_by, id];
     const result = await pool.query(query, values);
     return result.rows[0];
+  },
+
+  archive: async (id) => {
+    const result = await pool.query(
+      "UPDATE announcements SET is_archived = true WHERE announcement_id = $1 RETURNING *", 
+      [id]
+    );
+    return result.rowCount > 0;
   },
 
   delete: async (id) => {

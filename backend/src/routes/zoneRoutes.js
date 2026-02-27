@@ -1,9 +1,13 @@
-const router = require("express").Router();
-const zoneController = require("../controllers/zoneController");
-const authorize = require("../middleware/auth");
+const express = require("express");
+// ✅ 1. Import deleteZone
+const { addZone, getZones, updateZone, deleteZone } = require("../controllers/zoneController");
 
-router.put("/:id", authorize, zoneController.updateZone);
-router.post("/", authorize, zoneController.addZone);
-router.get("/", authorize, zoneController.getZones);
+const router = express.Router();
+
+router.post("/", addZone);
+router.get("/", getZones);
+router.put("/:id", updateZone);
+// ✅ 2. Add the missing route
+router.delete("/:id", deleteZone); 
 
 module.exports = router;

@@ -8,7 +8,7 @@ const createZone = async (zone_name, zone_color, boundaries) => {
   return result.rows[0];
 };
 
-
+/*
 const getAllZones = async () => {
   const query = `
     SELECT 
@@ -24,6 +24,24 @@ const getAllZones = async () => {
   `;
   const result = await pool.query(query);
   return result.rows;
+};*/
+
+const getAllZones = async () => {
+  const query = `
+    SELECT 
+      z.zone_id, 
+      z.zone_name, 
+      z.zone_color, 
+      z.boundaries,
+      COUNT(b.bin_id)::int as bin_count
+    FROM zones z
+    LEFT JOIN waste_bins b ON z.zone_id = b.zone_id
+    WHERE z.is_archived = false -- ✅ FILTER OUT ARCHIVED
+    GROUP BY z.zone_id, z.zone_name, z.zone_color, z.boundaries
+    ORDER BY z.zone_id DESC;
+  `;
+  const result = await pool.query(query);
+  return result.rows;
 };
 
 const updateZone = async (id, zone_name, zone_color, boundaries) => {
@@ -33,5 +51,14 @@ const updateZone = async (id, zone_name, zone_color, boundaries) => {
   );
   return result.rows[0];
 };
+// ✅ ADD THIS FUNCTION: Soft Delete
+const archiveZone = async (id) => {
+  const result = await pool.query(
+    "UPDATE zones SET is_archived = true WHERE zone_id = $1 RETURNING *",
+    [id]
+  );
+  return result.rows[0];
+};
 
-module.exports = { createZone, getAllZones, updateZone };
+// ✅ Make sure archiveZone is exported
+module.exports = { createZone, getAllZones, updateZone, archiveZone };

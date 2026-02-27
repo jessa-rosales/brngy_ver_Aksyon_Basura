@@ -49,11 +49,11 @@ const updateAnnouncement = async (req, res) => {
 const deleteAnnouncement = async (req, res) => {
   try {
     const { id } = req.params;
-    const success = await announcementModel.delete(id);
-    if (success) res.json({ message: "Deleted" });
+    const success = await announcementModel.archive(id); // Changed from .delete(id)
+    if (success) res.json({ message: "Announcement moved to archives" });
     else res.status(404).json({ error: "Not found" });
   } catch (err) {
-    res.status(500).json({ error: "Delete failed" });
+    res.status(500).json({ error: "Archive failed" });
   }
 };
 
