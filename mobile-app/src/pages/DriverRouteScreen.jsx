@@ -95,7 +95,8 @@ const DriverRouteScreen = ({ navigation, route }) => {
     requestPermissions();
 
     loadAssignedData();
-    const interval = setInterval(loadAssignedData, 30000);
+    // 🔥 UPDATED: Fast sync for Collector to see Truck movement
+    const interval = setInterval(loadAssignedData, 10000); 
     return () => clearInterval(interval);
   }, []);
 
@@ -240,6 +241,25 @@ const DriverRouteScreen = ({ navigation, route }) => {
     return futureMissions.length > 0 ? futureMissions[0] : assignedZones[0];
   }, [assignedZones]);
 
+  // 📍 Sync the Driver's location to the database every 4 seconds
+  useEffect(() => {
+    let syncInterval;
+    
+    if (isDriver && userLoc && currentMission?.vehicle_id) {
+      syncInterval = setInterval(() => {
+        driverService.updateTruckLocation(
+          currentMission.vehicle_id, 
+          userLoc[1], // lat
+          userLoc[0]  // lng
+        );
+      }, 4000); // 🔥 UPDATED: Near-live sync for Driver
+    }
+
+    return () => {
+      if (syncInterval) clearInterval(syncInterval);
+    };
+  }, [isDriver, userLoc, currentMission]);
+
   const missionBins = currentMission?.bins || [];
   const progressPercentage = missionBins.length > 0 ? (missionBins.filter(b => b.status === 'Collected').length / missionBins.length) * 100 : 0;
 
@@ -265,7 +285,6 @@ const DriverRouteScreen = ({ navigation, route }) => {
   }, [userLoc, missionBins]);
 
   // 📸 COLLECTOR: Handle taking the evidence photo
-// 📸 COLLECTOR: Handle taking the evidence photo
   const handleTakePhoto = () => {
     if (!nearestBin || !userLoc) return;
 
@@ -280,7 +299,7 @@ const DriverRouteScreen = ({ navigation, route }) => {
       return;
     }
 
-    // Geofence passed! Open the camera screen and PASS THE TASK ID 🔥
+    // Geofence passed! Open the camera screen and PASS THE TASK ID
     navigation.navigate('CameraCaptureScreen', { 
       binId: nearestBin.bin_id,
       zoneId: activeZoneId,
@@ -289,7 +308,6 @@ const DriverRouteScreen = ({ navigation, route }) => {
   };
 
   // 🚚 DRIVER: Handle Confirming Collection
-// 🚚 DRIVER: Handle Confirming Collection
   const handleAction = async () => { 
     if (!nearestBin) return;
 
@@ -355,6 +373,13 @@ const DriverRouteScreen = ({ navigation, route }) => {
       });
     }
   };
+
+  // 🚚 Determine the coordinates to draw the truck (Live GPS for Driver, DB Coords for Collector)
+  const truckCoords = isDriver 
+    ? userLoc 
+    : (currentMission?.truck_lng && currentMission?.truck_lat 
+        ? [currentMission.truck_lng, currentMission.truck_lat] 
+        : null);
   
   // Included `viewMode` in IDs to prevent Layer caching collisions, and composite keys
   const renderMapFeatures = (isNavigationMode) => {
@@ -471,8 +496,10 @@ const DriverRouteScreen = ({ navigation, route }) => {
                    onUpdate={(location) => setUserLoc([location.coords.longitude, location.coords.latitude])} 
                  />
                  
-                 {userLoc && (
-                   <MapboxGL.MarkerView id="user-truck-overview" coordinate={userLoc}>
+                 {/* 🔥 UPDATED: Shared Truck Marker logic using PointAnnotation */}
+                 {/* 🔥 REVERTED: Back to MarkerView so the image actually renders! */}
+                 {truckCoords && (
+                   <MapboxGL.MarkerView id="shared-truck-overview" coordinate={truckCoords}>
                      <View style={styles.customTruckPuck}>
                        <Image 
                          source={require('../../assets/truck.png')} 
@@ -587,7 +614,8 @@ const DriverRouteScreen = ({ navigation, route }) => {
             }} 
           />
 
-          {bearingLine && (
+          {/* 🔥 UPDATED: Only show the directional dashed line if the user is a Driver */}
+          {isDriver && bearingLine && (
             <MapboxGL.ShapeSource id="routeLineSource-nav" shape={bearingLine}>
               <MapboxGL.LineLayer
                 id="routeLineLayer-nav"
@@ -601,8 +629,10 @@ const DriverRouteScreen = ({ navigation, route }) => {
             </MapboxGL.ShapeSource>
           )}
 
-          {userLoc && (
-            <MapboxGL.MarkerView id="user-truck-mission" coordinate={userLoc}>
+          {/* 🔥 UPDATED: Shared Truck Marker logic for navigation map using PointAnnotation */}
+          {/* 🔥 REVERTED: Back to MarkerView so the image actually renders! */}
+          {truckCoords && (
+            <MapboxGL.MarkerView id="shared-truck-mission" coordinate={truckCoords}>
               <View style={[styles.customTruckPuck, !isTracking && { borderColor: '#94a3b8' }]}>
                 <Image 
                   source={require('../../assets/truck.png')} 
