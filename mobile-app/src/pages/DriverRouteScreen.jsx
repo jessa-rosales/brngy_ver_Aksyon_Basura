@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { 
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, 
-  StatusBar, ActivityIndicator, Platform, RefreshControl, Image 
+  StatusBar, ActivityIndicator, Platform, RefreshControl, Image, Alert 
 } from 'react-native';
 // ✅ Mapbox SDK Imports
 import MapboxGL from '@rnmapbox/maps';
@@ -32,7 +32,7 @@ const getDistance = (lat1, lon1, lat2, lon2) => {
   return R * c; 
 };
 
-// 📍 2. FIX: Extracted outside the main component to prevent ViewTagResolver crashes
+// 📍 2. Extracted outside the main component to prevent ViewTagResolver crashes
 const RenderBinMarker = ({ status, isNext }) => (
   <View style={styles.emeraldMarkerContainer}>
     <View style={[styles.emeraldPulse, isNext && styles.bluePulse]} />
@@ -50,6 +50,7 @@ const RenderBinMarker = ({ status, isNext }) => (
 const DriverRouteScreen = ({ navigation, route }) => {
   const insets = useSafeAreaInsets();
   
+  // Role Detection
   const userRole = route.params?.role || 'driver';
   const isDriver = userRole === 'driver';
 
@@ -98,6 +99,31 @@ const DriverRouteScreen = ({ navigation, route }) => {
     return () => clearInterval(interval);
   }, []);
 
+  // 📍 NEW: Listen for successful photo capture from the Camera Screen
+  useEffect(() => {
+    if (route.params?.evidenceSubmittedForBin) {
+      const capturedBinId = route.params.evidenceSubmittedForBin;
+      
+      // Update local state to mark this bin's evidence as submitted
+      setAssignedZones(prevZones => prevZones.map(zone => {
+        if (zone.zone_id === activeZoneId) {
+          return {
+            ...zone,
+            bins: zone.bins.map(b => 
+              b.bin_id === capturedBinId 
+                ? { ...b, evidence_submitted: true } 
+                : b
+            )
+          };
+        }
+        return zone;
+      }));
+      
+      // Clear the param so it doesn't re-trigger
+      navigation.setParams({ evidenceSubmittedForBin: null });
+    }
+  }, [route.params?.evidenceSubmittedForBin, activeZoneId, navigation]);
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await loadAssignedData();
@@ -117,7 +143,7 @@ const DriverRouteScreen = ({ navigation, route }) => {
         const now = new Date();
         const curTime = now.getHours() * 100 + now.getMinutes();
 
-        const formatted = assignments.map(a => {
+        const formatted = assignments.map((a, zIdx) => {
           const boundaryData = typeof a.boundaries === 'string' ? JSON.parse(a.boundaries) : a.boundaries;
           let rawPoints = [];
           if (boundaryData?.type === 'Polygon') rawPoints = boundaryData.coordinates[0];
@@ -129,11 +155,22 @@ const DriverRouteScreen = ({ navigation, route }) => {
             return [lng, lat];
           });
 
+          // Provide robust fallback IDs in case the API returns nulls
+          const safeZoneId = a.zone_id || `temp-zone-${zIdx}`;
+
           return {
             ...a,
+            zone_id: safeZoneId,
             polygonCoords,
             isActiveNow: isNowActive(a.start_time, a.end_time),
-            bins: (a.bins || []).map(bin => ({ ...bin, lat: Number(bin.lat), lng: Number(bin.lng) }))
+            bins: (a.bins || []).map((bin, bIdx) => ({ 
+              ...bin, 
+              bin_id: bin.bin_id || `temp-bin-${safeZoneId}-${bIdx}`,
+              lat: Number(bin.lat), 
+              lng: Number(bin.lng),
+              // Ensure we track evidence status locally
+              evidence_submitted: bin.evidence_submitted || false 
+            }))
           };
         });
 
@@ -155,6 +192,41 @@ const DriverRouteScreen = ({ navigation, route }) => {
         setIsLoading(false); 
     }
   };
+
+  const getBoundingBox = (coords) => {
+    if (!coords || coords.length === 0) return null;
+    const lats = coords.map(p => p[1]);
+    const lngs = coords.map(p => p[0]);
+    return {
+      ne: [Math.max(...lngs), Math.max(...lats)],
+      sw: [Math.min(...lngs), Math.min(...lats)]
+    };
+  };
+
+  const cameraBounds = useMemo(() => {
+    const targetZone = assignedZones.find(z => z.zone_id === activeZoneId);
+    if (targetZone?.polygonCoords?.length > 0) {
+      return getBoundingBox(targetZone.polygonCoords);
+    }
+    return null;
+  }, [activeZoneId, assignedZones]);
+
+  // 📍 NEW: Programmatically zoom to the zone when entering Navigation Mode
+  useEffect(() => {
+    if (viewMode === 'navigation' && cameraBounds && mapCameraRef.current) {
+      mapCameraRef.current.setCamera({
+        bounds: {
+          ne: cameraBounds.ne,
+          sw: cameraBounds.sw,
+          paddingTop: 120,
+          paddingBottom: 250,
+          paddingLeft: 40,
+          paddingRight: 40
+        },
+        animationDuration: 1200
+      });
+    }
+  }, [viewMode, cameraBounds]);
 
   const currentMission = useMemo(() => {
     if (assignedZones.length === 0) return null;
@@ -192,40 +264,57 @@ const DriverRouteScreen = ({ navigation, route }) => {
     return closest;
   }, [userLoc, missionBins]);
 
-  const handleAction = () => { 
+  // 📸 COLLECTOR: Handle taking the evidence photo
+// 📸 COLLECTOR: Handle taking the evidence photo
+  const handleTakePhoto = () => {
+    if (!nearestBin || !userLoc) return;
+
+    const distanceKm = getDistance(userLoc[1], userLoc[0], nearestBin.lat, nearestBin.lng);
+    const distanceMeters = distanceKm * 1000;
+
+    if (distanceMeters > 15) {
+      Alert.alert(
+        "Too far away!", 
+        `You are ${Math.round(distanceMeters)}m away from the bin. Please get within 15 meters to take the photo.`
+      );
+      return;
+    }
+
+    // Geofence passed! Open the camera screen and PASS THE TASK ID 🔥
+    navigation.navigate('CameraCaptureScreen', { 
+      binId: nearestBin.bin_id,
+      zoneId: activeZoneId,
+      taskId: currentMission?.task_id 
+    });
+  };
+
+  // 🚚 DRIVER: Handle Confirming Collection
+// 🚚 DRIVER: Handle Confirming Collection
+  const handleAction = async () => { 
     if (!nearestBin) return;
 
-    // Simulate collection locally
-    const updatedZones = assignedZones.map(zone => {
-      if (zone.zone_id === activeZoneId) {
-        return {
-          ...zone,
-          bins: zone.bins.map(b => b.bin_id === nearestBin.bin_id ? { ...b, status: 'Collected' } : b)
-        };
-      }
-      return zone;
-    });
+    try {
+      // 1. Fire the API to update the database
+      await driverService.confirmCollection(nearestBin.bin_id);
 
-    setAssignedZones(updatedZones);
-  };
+      // 2. Update the local map state so the bin turns gray and gets checked off
+      const updatedZones = assignedZones.map(zone => {
+        if (zone.zone_id === activeZoneId) {
+          return {
+            ...zone,
+            bins: zone.bins.map(b => b.bin_id === nearestBin.bin_id ? { ...b, status: 'Collected' } : b)
+          };
+        }
+        return zone;
+      });
 
-  const getBoundingBox = (coords) => {
-    if (!coords || coords.length === 0) return null;
-    const lats = coords.map(p => p[1]);
-    const lngs = coords.map(p => p[0]);
-    return {
-      ne: [Math.max(...lngs), Math.max(...lats)],
-      sw: [Math.min(...lngs), Math.min(...lats)]
-    };
-  };
+      setAssignedZones(updatedZones);
+      console.log("Collection confirmed and updated in database!");
 
-  const cameraBounds = useMemo(() => {
-    const targetZone = assignedZones.find(z => z.zone_id === activeZoneId);
-    if (targetZone?.polygonCoords?.length > 0) {
-      return getBoundingBox(targetZone.polygonCoords);
+    } catch (error) {
+      Alert.alert("Error", "Could not confirm collection. Please check your connection.");
     }
-    return null;
-  }, [activeZoneId, assignedZones]);
+  };
 
   // 📍 4. DIRECTIONAL LINE LOGIC
   const bearingLine = useMemo(() => {
@@ -267,34 +356,38 @@ const DriverRouteScreen = ({ navigation, route }) => {
     }
   };
   
+  // Included `viewMode` in IDs to prevent Layer caching collisions, and composite keys
   const renderMapFeatures = (isNavigationMode) => {
-    return assignedZones.map((z, idx) => (
-      <React.Fragment key={z.zone_id || `zone-${idx}`}>
+    // Determine the current view string to make Mapbox layer IDs 100% unique per screen
+    const currentView = isNavigationMode ? 'nav' : 'overview';
+
+    return assignedZones.map((z, zIdx) => (
+      <React.Fragment key={`zone-wrapper-${currentView}-${z.zone_id}-${zIdx}`}>
         {z.polygonCoords?.length > 0 && (
           <MapboxGL.ShapeSource 
-            id={`source-${z.zone_id}`} 
+            id={`source-${currentView}-${z.zone_id}-${zIdx}`} 
             shape={{ type: 'Feature', geometry: { type: 'Polygon', coordinates: [z.polygonCoords] } }}
           >
             <MapboxGL.FillLayer 
-              id={`fill-${z.zone_id}`} 
+              id={`fill-${currentView}-${z.zone_id}-${zIdx}`} 
               style={{ 
                 fillColor: z.zone_color || '#10B981', 
                 fillOpacity: z.zone_id === activeZoneId ? 0.25 : 0.08 
               }} 
             />
             <MapboxGL.LineLayer 
-              id={`line-${z.zone_id}`} 
+              id={`line-${currentView}-${z.zone_id}-${zIdx}`} 
               style={{ lineColor: z.zone_color || '#10B981', lineWidth: 1 }} 
             />
           </MapboxGL.ShapeSource>
         )}
 
-        {z.bins.map(b => {
+        {z.bins.map((b, bIdx) => {
           const isTarget = isNavigationMode && nearestBin?.bin_id === b.bin_id;
           return (
             <MapboxGL.PointAnnotation 
-              key={`point-${b.bin_id}`} 
-              id={`ann-bin-${b.bin_id}`} 
+              key={`point-${currentView}-${z.zone_id}-${b.bin_id}-${bIdx}`} 
+              id={`ann-bin-${currentView}-${z.zone_id}-${b.bin_id}-${bIdx}`} 
               coordinate={[b.lng, b.lat]}
             >
               <RenderBinMarker status={b.status} isNext={isTarget} />
@@ -356,7 +449,6 @@ const DriverRouteScreen = ({ navigation, route }) => {
              {isLoading ? (
                <View style={styles.mapLoading}><ActivityIndicator color="#10B981" /><Text style={styles.loadingText}>Syncing Map Data...</Text></View>
              ) : (
-               // 📍 5. FIX: Map inlined to avoid re-mounting crash
                <MapboxGL.MapView 
                  style={styles.map} 
                  styleURL={mapType === 'hybrid' ? MapboxGL.StyleURL.SatelliteStreet : MapboxGL.StyleURL.Street}
@@ -396,7 +488,8 @@ const DriverRouteScreen = ({ navigation, route }) => {
                </MapboxGL.MapView>
              )}
              <View style={styles.mapControls}>
-                <TouchableOpacity style={styles.mapControlBtn} onPress={() => setViewMode('navigation')}><Maximize2 size={18} color="#1e293b" /></TouchableOpacity>
+                {/* SET TRACKING TO FALSE HERE BEFORE SWITCHING VIEW */}
+                <TouchableOpacity style={styles.mapControlBtn} onPress={() => { setIsTracking(false); setViewMode('navigation'); }}><Maximize2 size={18} color="#1e293b" /></TouchableOpacity>
                 <TouchableOpacity style={[styles.mapControlBtn, { marginTop: 10 }]} onPress={() => setMapType(mapType === 'standard' ? 'hybrid' : 'standard')}><Layers size={18} color={mapType === 'hybrid' ? '#10B981' : '#1e293b'} /></TouchableOpacity>
              </View>
           </View>
@@ -417,7 +510,7 @@ const DriverRouteScreen = ({ navigation, route }) => {
                 const isNext = !isDone && nearestBin?.bin_id === item.bin_id;
                 
                 return (
-                    <View key={index} style={styles.timelineRow}>
+                    <View key={`timeline-row-${item.bin_id}-${index}`} style={styles.timelineRow}>
                         <View style={styles.timelineGraphics}>
                             <View style={[styles.timelineLine, index === missionBins.length - 1 && { opacity: 0 }, isDone && {backgroundColor: '#10B981'}]} />
                             <View style={[styles.timelineNode, isDone ? {backgroundColor: '#10B981'} : (isNext ? {backgroundColor: '#3B82F6'} : {backgroundColor: '#F1F5F9'})]}>
@@ -445,7 +538,8 @@ const DriverRouteScreen = ({ navigation, route }) => {
           </View>
         </ScrollView>
         <View style={[styles.stickyFooter, { paddingBottom: insets.bottom + 15 }]}>
-            <TouchableOpacity activeOpacity={0.9} onPress={() => setViewMode('navigation')}>
+            {/* SET TRACKING TO FALSE HERE BEFORE SWITCHING VIEW */}
+            <TouchableOpacity activeOpacity={0.9} onPress={() => { setIsTracking(false); setViewMode('navigation'); }}>
               <LinearGradient colors={['#10B981', '#059669']} start={{x:0, y:0}} end={{x:1, y:0}} style={styles.engageBtn}>
                  <Navigation size={22} color="white" style={{marginRight: 10}} />
                  <Text style={styles.engageBtnText}>START COLLECTION</Text>
@@ -463,7 +557,6 @@ const DriverRouteScreen = ({ navigation, route }) => {
     <View style={styles.navContainer}>
       <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
       
-      {/* 📍 6. FIX: Map inlined to avoid re-mounting crash */}
       <View style={styles.fullMap}>
         <MapboxGL.MapView 
           style={styles.fullMap} 
@@ -481,10 +574,10 @@ const DriverRouteScreen = ({ navigation, route }) => {
                 setIsTracking(false);
               }
             }}
-            bounds={!isTracking && !userLoc && cameraBounds ? {
+            bounds={!isTracking && cameraBounds ? {
               ne: cameraBounds.ne, sw: cameraBounds.sw, paddingTop: 120, paddingBottom: 250, paddingLeft: 40, paddingRight: 40
             } : undefined}
-            centerCoordinate={!isTracking && !cameraBounds && !userLoc ? INITIAL_COORDINATES : undefined} 
+            centerCoordinate={!isTracking && !cameraBounds ? INITIAL_COORDINATES : undefined} 
           />
           
           <MapboxGL.UserLocation 
@@ -495,9 +588,9 @@ const DriverRouteScreen = ({ navigation, route }) => {
           />
 
           {bearingLine && (
-            <MapboxGL.ShapeSource id="routeLineSource" shape={bearingLine}>
+            <MapboxGL.ShapeSource id="routeLineSource-nav" shape={bearingLine}>
               <MapboxGL.LineLayer
-                id="routeLineLayer"
+                id="routeLineLayer-nav"
                 style={{
                   lineColor: '#3B82F6', 
                   lineWidth: 4,
@@ -544,12 +637,48 @@ const DriverRouteScreen = ({ navigation, route }) => {
               {nearestBin ? nearestBin.address : 'All Stops Completed 🎉'}
             </Text>
             <View style={styles.instrActions}>
-                <TouchableOpacity style={styles.instrBtnAlert}><AlertTriangle size={22} color="#EF4444" /></TouchableOpacity>
-                <TouchableOpacity style={[styles.instrBtnMain, !nearestBin && { opacity: 0.5 }]} disabled={!nearestBin} onPress={handleAction}>
-                  <LinearGradient colors={['#10B981', '#059669']} style={styles.instrBtnGrad}>
-                    <Text style={styles.instrBtnText}>{nearestBin ? 'CONFIRM COLLECTION' : 'ROUTE CLEAR'}</Text>
-                  </LinearGradient>
+                <TouchableOpacity style={styles.instrBtnAlert}>
+                  <AlertTriangle size={22} color="#EF4444" />
                 </TouchableOpacity>
+
+                {/* 🔥 ROLE-BASED BUTTON LOGIC */}
+                {isDriver ? (
+                    /* DRIVER VIEW */
+                    <TouchableOpacity 
+                        style={[
+                            styles.instrBtnMain, 
+                            (!nearestBin || !nearestBin.evidence_submitted) && { opacity: 0.5 }
+                        ]} 
+                        disabled={!nearestBin || !nearestBin.evidence_submitted} 
+                        onPress={handleAction}
+                    >
+                        <LinearGradient 
+                            colors={nearestBin?.evidence_submitted ? ['#10B981', '#059669'] : ['#94a3b8', '#64748b']} 
+                            style={styles.instrBtnGrad}
+                        >
+                            <Text style={styles.instrBtnText}>
+                                {!nearestBin 
+                                    ? 'ROUTE CLEAR' 
+                                    : nearestBin.evidence_submitted 
+                                        ? 'CONFIRM COLLECTION' 
+                                        : 'WAITING FOR PHOTO...'}
+                            </Text>
+                        </LinearGradient>
+                    </TouchableOpacity>
+                ) : (
+                    /* COLLECTOR VIEW */
+                    <TouchableOpacity 
+                        style={[styles.instrBtnMain, !nearestBin && { opacity: 0.5 }]} 
+                        disabled={!nearestBin} 
+                        onPress={handleTakePhoto}
+                    >
+                        <LinearGradient colors={['#3B82F6', '#2563EB']} style={styles.instrBtnGrad}>
+                            <Text style={styles.instrBtnText}>
+                                {nearestBin ? '📸 TAKE EVIDENCE PHOTO' : 'ALL DONE'}
+                            </Text>
+                        </LinearGradient>
+                    </TouchableOpacity>
+                )}
             </View>
          </View>
       </View>

@@ -38,6 +38,7 @@ import LiveMapScreen from '../pages/LiveMapScreen';
 import ScheduleScreen from '../pages/ScheduleScreen';
 import TrackScreen from '../pages/TrackScreen';
 import DriverRouteScreen from '../pages/DriverRouteScreen';
+import CameraCaptureScreen from '../pages/CameraCaptureScreen';
 
 const { width } = Dimensions.get('window');
 const Stack = createStackNavigator();
@@ -200,6 +201,15 @@ const AppNavigator = () => {
         />
         <Stack.Screen name="EditProfile" component={EditProfileScreen} options={{ headerShown: true, title: 'Edit Profile' }} />
         <Stack.Screen name="LiveMapScreen" component={LiveMapScreen} options={{ headerShown: false }} />
+
+        <Stack.Screen 
+          name="CameraCaptureScreen" 
+          component={CameraCaptureScreen} 
+          options={{ 
+            headerShown: false, 
+            presentation: 'modal' 
+          }} 
+        />
       </Stack.Navigator>
     </NavigationContainer>
   );
