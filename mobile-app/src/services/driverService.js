@@ -169,5 +169,29 @@ export const driverService = {
       console.error("Confirm Collection Error:", error);
       throw error;
     }
+  },
+
+  updateTruckLocation: async (vehicleId, lat, lng) => {
+    try {
+      console.log(`🚀 Sending GPS Sync... Vehicle: ${vehicleId} | Lat: ${lat} | Lng: ${lng}`);
+      
+      const token = await AsyncStorage.getItem('token');
+      const response = await fetch(`${API_URL}/mobile/vehicle-location`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify({ vehicle_id: vehicleId, lat, lng })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error("❌ Server rejected GPS sync:", errorText);
+      }
+    } catch (error) {
+      console.error("❌ Failed to sync truck location:", error);
+    }
   }
 };
