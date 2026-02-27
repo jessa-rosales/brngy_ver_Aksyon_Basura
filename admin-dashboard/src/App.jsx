@@ -3,6 +3,7 @@ import CloseSidebar from './components/CloseSidebar';
 import LandingPage from './pages/LandingPage';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard'; 
+import CollectedBins from './pages/CollectedBins';
 import CitizenReports from './pages/CitizenReports';
 import UserManagement from './pages/UserManagement'; 
 import ZoneManagement from './pages/ZoneManagement';
@@ -10,6 +11,7 @@ import Announcement from './pages/Announcement';
 import AssignTask from './pages/AssignTask'; 
 import ProfileSettings from './pages/ProfileSettings'; 
 import { UserProvider, useUser } from './context/UserContext';
+import ArchiveCenter from './pages/ArchiveCenter';
 
 // --- ADMIN PROTECTED ROUTE COMPONENT ---
 // This ensures that even if someone finds a link, they can't see data without being an Admin
@@ -48,6 +50,11 @@ function App() {
           <Route path="/dashboard" element={
             <AdminRoute><CloseSidebar><Dashboard /></CloseSidebar></AdminRoute>
           } />
+
+          <Route path="/bins" element={
+            <AdminRoute><CloseSidebar><CollectedBins /></CloseSidebar></AdminRoute>
+          } />
+          
           
           <Route path="/reports" element={
             <AdminRoute><CloseSidebar><CitizenReports /></CloseSidebar></AdminRoute>
@@ -67,6 +74,10 @@ function App() {
           
           <Route path="/assign-task" element={
             <AdminRoute><CloseSidebar><AssignTask /></CloseSidebar></AdminRoute>
+          } />
+
+          <Route path="/archive-center" element={
+            <AdminRoute><CloseSidebar><ArchiveCenter /></CloseSidebar></AdminRoute>
           } />
           
           <Route path="/profile-settings" element={

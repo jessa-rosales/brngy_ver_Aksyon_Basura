@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Map as MapIcon, Plus, Edit, Trash2, ArrowUp, Trash, Bell } from 'lucide-react'; 
+import { Search, Map as MapIcon, Plus, Edit, Trash2, ArrowUp, Trash, Bell, Archive } from 'lucide-react'; 
 import 'leaflet/dist/leaflet.css';
 import { MapContainer, TileLayer, LayersControl, Polygon, Popup, Marker } from 'react-leaflet';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -9,33 +9,32 @@ import { design } from '../styles/design';
 import Notification from '../components/Notification';
 import AddZoneModal from '../components/AddZoneModal';
 import AddBinModal from '../components/AddBinModal';
+import ConfirmDialog from '../components/ConfirmDialog'; // ✅ Added for modern archiving
 
 // SERVICES & CONTEXT
 import { zoneService } from '../services/zoneService';
-import { useUser } from '../context/UserContext'; // ✅ Added UserContext
+import { archiveService } from '../services/archiveService'; // ✅ Added for Archive Center
+import { useUser } from '../context/UserContext'; 
 
 const mainMapBinIcon = new L.DivIcon({
   html: renderToStaticMarkup(
     <div className="relative flex items-center justify-center">
-      {/* Outer Glow Effect */}
       <div className="absolute w-8 h-8 bg-emerald-500/20 rounded-full animate-pulse" />
-      {/* Main Container */}
       <div className="relative bg-emerald-700 p-1.5 rounded-full border-2 border-white shadow-lg flex items-center justify-center">
         <Trash2 color="white" size={12} />
       </div>
-      {/* Bottom Pointer Tip */}
       <div className="absolute -bottom-1 w-2 h-2 bg-emerald-700 rotate-45 border-r border-b border-white" />
     </div>
   ),
   className: 'main-bin-icon',
   iconSize: [30, 30],
-  iconAnchor: [15, 30], // Tip of the pointer
+  iconAnchor: [15, 30],
   popupAnchor: [0, -30],
 });
 
 const ZoneManagement = () => {
   const navigate = useNavigate();
-  const { user } = useUser(); // ✅ Access global user state
+  const { user } = useUser(); 
   const [searchTerm, setSearchTerm] = useState('');
   const [zones, setZones] = useState([]);
   const [allBins, setAllBins] = useState([]);
@@ -49,12 +48,16 @@ const ZoneManagement = () => {
   const [activeZoneForBin, setActiveZoneForBin] = useState(null);
   const [zoneBins, setZoneBins] = useState([]);
 
+  // ✅ ARCHIVE CENTER STATES
+  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+  const [zoneToArchive, setZoneToArchive] = useState(null);
+
   const scrollContainerRef = useRef(null);
   const { layout: l, dashboard: d, ui } = design;
 
   const triggerNotify = (msg, type = 'success') => setNotify({ show: true, msg, type });
 
-  /* INITIAL LOAD - Updated to use UserContext */
+  /* INITIAL LOAD */
   useEffect(() => {
     if (!user) {
       navigate("/login");
@@ -69,7 +72,9 @@ const ZoneManagement = () => {
         zoneService.getZones(),
         zoneService.getAllBins()
       ]);
-      setZones(zoneData || []);
+      
+      // ✅ Updated to only show non-archived zones in active management
+      setZones((zoneData || []).filter(z => !z.is_archived));
       setAllBins(binData || []);
     } catch (err) { console.error("Data Load Error", err); }
   };
@@ -93,9 +98,29 @@ const ZoneManagement = () => {
     }
   };
 
-  const handleDeleteZone = async (id) => {
-    if (!window.confirm("Delete this zone?")) return;
-    if (await zoneService.deleteZone(id)) refreshAllData();
+  // ✅ Updated Deletion to use Archiving
+  const handleDeleteZone = (id) => {
+    setZoneToArchive(id);
+    setIsConfirmOpen(true);
+  };
+
+  const handleConfirmArchive = async () => {
+    try {
+      // ✅ Check if it actually returns true
+      const success = await zoneService.deleteZone(zoneToArchive); 
+      
+      if (!success) {
+         throw new Error("Server rejected the archive request");
+      }
+      
+      refreshAllData();
+      setIsConfirmOpen(false);
+      triggerNotify("Zone moved to Archive Center", "warning");
+    } catch (err) {
+      // ✅ Now it will properly show an error if it fails!
+      setIsConfirmOpen(false);
+      triggerNotify("Failed to archive zone", "error"); 
+    }
   };
 
   /* BIN ACTIONS */
@@ -148,12 +173,11 @@ const ZoneManagement = () => {
 
   const filteredZones = zones.filter(z => (z.zone_name || "").toLowerCase().includes(searchTerm.toLowerCase()));
 
-  // ✅ Safe return to prevent layout jump while navigating
   if (!user) return null;
 
   return (
     <div ref={scrollContainerRef} className="h-full overflow-y-auto relative bg-[#f0fdf4]">
-      {/* HEADER - Updated to use UserContext Profile */}
+      {/* HEADER */}
       <header className={l.header}>
         <div className="relative w-full max-w-2xl"> 
           <Search className="absolute left-3 top-2.5 text-gray-500" size={18} />
@@ -171,10 +195,7 @@ const ZoneManagement = () => {
           </button>
           
           <div className="flex items-center gap-3 pl-6 border-l border-gray-300">
-            <div 
-              className="text-right hidden md:block cursor-pointer hover:opacity-70 transition-opacity"
-              onClick={() => navigate("/profile-settings")}
-            >
+            <div className="text-right hidden md:block cursor-pointer hover:opacity-70 transition-opacity" onClick={() => navigate("/profile-settings")}>
               <p className="text-sm font-bold text-gray-800 leading-tight">
                 {user.first_name} {user.last_name}
               </p>
@@ -182,32 +203,26 @@ const ZoneManagement = () => {
                 {user.role}
               </p>
             </div>
-            
-            <div 
-              className={`${l.profileCircle} cursor-pointer hover:ring-4 hover:ring-green-100 transition-all overflow-hidden border border-gray-100`}
-              onClick={() => navigate("/profile-settings")}
-            >
-              {user.profile_picture ? (
-                <img 
-                  src={`http://localhost:5000${user.profile_picture}`} 
-                  alt="Profile" 
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <img 
-                  src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${user.first_name}`} 
-                  alt="Default Avatar" 
-                />
-              )}
+            <div className={`${l.profileCircle} cursor-pointer hover:ring-4 hover:ring-green-100 transition-all overflow-hidden border border-gray-100`} onClick={() => navigate("/profile-settings")}>
+              <img src={user.profile_picture ? `http://localhost:5000${user.profile_picture}` : `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.first_name}`} alt="Profile" className="w-full h-full object-cover" />
             </div>
           </div>
         </div>
       </header>
 
       <main className="p-8 space-y-8">
-        <div>
-          <h2 className="text-3xl font-bold text-[#1B5E20]">Zone Boundaries</h2>
-          <p className="text-gray-600 text-sm">Monitor and manage waste collection areas</p>
+        <div className="flex justify-between items-end">
+          <div>
+            <h2 className="text-3xl font-bold text-[#1B5E20]">Zone Boundaries</h2>
+            <p className="text-gray-600 text-sm">Monitor and manage waste collection areas</p>
+          </div>
+          {/* ✅ ARCHIVE CENTER SHORTCUT */}
+          <button 
+            onClick={() => navigate("/archive-center")}
+            className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-400 hover:text-emerald-600 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-sm"
+          >
+            <Archive size={14} /> View Archives
+          </button>
         </div>
 
         {/* INTERACTIVE MAP VIEW */}
@@ -312,10 +327,11 @@ const ZoneManagement = () => {
           </div>
         </div>
       </main>
+      
       {showBackToTop && (
         <button 
           onClick={scrollToTop}
-          className={`${ui.backToTop} flex items-center justify-center animate-bounce z-2000`}
+          className={`${ui.backToTop} flex items-center justify-center animate-bounce z-[2000]`}
         >
           <ArrowUp size={24} />
         </button>
@@ -343,6 +359,17 @@ const ZoneManagement = () => {
         onDeleteBin={handleDeleteBin}
         onNotify={triggerNotify}
         existingBins={zoneBins}
+      />
+
+      {/* MODERN ARCHIVE CONFIRMATION */}
+      <ConfirmDialog 
+        isOpen={isConfirmOpen}
+        onClose={() => setIsConfirmOpen(false)}
+        onConfirm={handleConfirmArchive}
+        title="Archive Zone?"
+        message="This zone will be hidden from the map and moved to the Archive Center. All associated bins will remain in records."
+        confirmText="Archive Now"
+        type="warning"
       />
 
       <Notification 

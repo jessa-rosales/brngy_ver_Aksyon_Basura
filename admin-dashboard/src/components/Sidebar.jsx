@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
   LayoutDashboard, Trash2, FileText, Truck, ClipboardList, 
-  MapPin, Megaphone, Users, LogOut, ChevronLeft, Menu 
+  MapPin, Megaphone, Users, LogOut, ChevronLeft, Menu, Archive 
 } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { authService } from '../services/authService';
@@ -41,6 +41,7 @@ const Sidebar = ({ isCollapsed, setIsCollapsed }) => {
     { icon: MapPin, label: 'Add Zone', path: '/zones' },
     { icon: Megaphone, label: 'Announcement', path: '/announcements' },
     { icon: Users, label: 'User Management', path: '/users' },
+    { icon: Archive, label: 'Archive Center', path: '/archive-center' },
   ];
 
   return (

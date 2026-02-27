@@ -1,7 +1,8 @@
 import React from 'react';
-import { X, Trash2, Archive, Edit, Calendar, User, Clock, Megaphone, ArrowRight, CornerDownRight, RefreshCcw } from 'lucide-react';
+import { X, Archive, Edit, User, Clock, Megaphone, CornerDownRight, RefreshCcw } from 'lucide-react';
 
-const AnnouncementDetailsModal = ({ isOpen, onClose, announcement, onDelete, onArchive, onEdit }) => {
+// Removed 'onDelete' from props as requested
+const AnnouncementDetailsModal = ({ isOpen, onClose, announcement, onArchive, onEdit }) => {
   if (!isOpen || !announcement) return null;
 
   const priorityColors = {
@@ -130,29 +131,22 @@ const AnnouncementDetailsModal = ({ isOpen, onClose, announcement, onDelete, onA
         </div>
 
         {/* --- 4. THE ACTION COMMAND CENTER --- */}
-        <div className="p-8 border-t border-slate-50 flex items-center justify-between bg-white shrink-0 animate-in zoom-in-95 duration-500 delay-700 fill-mode-both">
-          <button 
-            onClick={() => onDelete(announcement.announcement_id)} 
-            className="flex items-center gap-2.5 px-6 py-3.5 text-red-500 bg-red-50 hover:bg-red-500 hover:text-white rounded-xl transition-all font-black uppercase text-[10px] tracking-widest active:scale-95 group"
-          >
-            <Trash2 size={16} className="group-hover:rotate-12 transition-transform" /> Delete
-          </button>
-          
-          <div className="flex gap-3">
+        <div className="p-8 border-t border-slate-50 flex items-center justify-end bg-white shrink-0 animate-in zoom-in-95 duration-500 delay-700 fill-mode-both gap-3">
+            {/* The Delete button has been completely removed from here */}
+            
             <button 
                 onClick={() => onArchive(announcement.announcement_id)} 
-                className="px-6 py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-black rounded-xl transition-all active:scale-90 text-[10px] uppercase tracking-widest flex items-center gap-2.5"
+                className="px-6 py-3.5 bg-red-50 hover:bg-red-500 text-red-500 hover:text-white font-black rounded-xl transition-all active:scale-90 text-[10px] uppercase tracking-widest flex items-center gap-2.5 group"
             >
-                <Archive size={16} /> Archive
+                <Archive size={16} className="group-hover:-translate-y-1 transition-transform" /> Move to Archive
             </button>
             <button 
                 onClick={() => onEdit(announcement)} 
                 className="relative overflow-hidden px-8 py-3.5 bg-slate-900 text-white font-black rounded-xl flex items-center gap-3 shadow-xl transition-all active:scale-95 hover:bg-black text-[10px] uppercase tracking-widest group"
             >
                 <div className="absolute inset-0 w-1/2 h-full bg-white/5 skew-x-[-25deg] -translate-x-full group-hover:translate-x-[250%] transition-transform duration-1000" />
-                Modify <Edit size={16} />
+                Modify Content <Edit size={16} />
             </button>
-          </div>
         </div>
       </div>
     </div>

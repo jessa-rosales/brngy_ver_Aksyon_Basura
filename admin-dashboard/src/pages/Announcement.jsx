@@ -3,22 +3,24 @@ import { useNavigate } from 'react-router-dom';
 import { 
   Search, Bell, Plus, Megaphone, Calendar, 
   User, Trash2, X, ChevronDown, Clock, RefreshCcw,
-  ShieldAlert, Wrench, Info, FileText, XCircle, CheckCircle
+  ShieldAlert, Wrench, Info, FileText, XCircle, CheckCircle,
+  Archive // ✅ Added Archive Icon
 } from 'lucide-react'; 
 import { design } from '../styles/design'; 
 
 // SERVICES & CONTEXT
 import { announcementService } from '../services/announcementService';
-import { useUser } from '../context/UserContext'; // ✅ Added UserContext
+import { useUser } from '../context/UserContext';
 
 // COMPONENTS
 import Notification from '../components/Notification';
 import CreateAnnouncementModal from '../components/CreateAnnouncementModal';
 import AnnouncementDetailsModal from '../components/AnnouncementDetailsModal';
+import ConfirmDialog from '../components/ConfirmDialog'; // ✅ Added ConfirmDialog
 
 const Announcement = () => {
   const navigate = useNavigate();
-  const { user } = useUser(); // ✅ Access global user state
+  const { user } = useUser();
   const [announcements, setAnnouncements] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('All Types');
@@ -33,13 +35,16 @@ const Announcement = () => {
   const [isEditMode, setIsEditMode] = useState(false);
   const [activeFilter, setActiveFilter] = useState(null); 
 
+  // ✅ NEW ARCHIVE STATES
+  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+  const [itemToArchive, setItemToArchive] = useState(null);
+
   const { layout: l, userManagement: u } = design;
 
   /* ==========================================
       INITIALIZATION
      ========================================== */
   useEffect(() => {
-    // ✅ Redirect if not logged in
     if (!user) {
       navigate("/login");
       return;
@@ -56,7 +61,8 @@ const Announcement = () => {
   const loadAnnouncements = async () => {
     try {
       const data = await announcementService.getAnnouncements();
-      setAnnouncements(data || []);
+      // Only keep non-archived items (failsafe in case backend doesn't filter)
+      setAnnouncements(data ? data.filter(a => !a.is_archived) : []);
     } catch (err) { console.error(err); }
   };
 
@@ -91,7 +97,7 @@ const Announcement = () => {
   const handleEditClick = (ann) => {
     setSelectedAnn(ann);
     setIsDetailsOpen(false); 
-    setIsEditMode(true);     
+    setIsEditMode(true);    
     setIsModalOpen(true);    
   };
 
@@ -107,14 +113,14 @@ const Announcement = () => {
       if (isEditMode && selectedAnn) {
         result = await announcementService.updateAnnouncement(selectedAnn.announcement_id, {
             ...formData,
-            last_edited_by: user?.user_id // ✅ Using context user_id
+            last_edited_by: user?.user_id 
         });
         
         if (result) triggerNotify("Announcement updated!", "success");
       } else {
         result = await announcementService.createAnnouncement({
           ...formData,
-          author_id: user?.user_id // ✅ Using context user_id
+          author_id: user?.user_id 
         });
         if (result) triggerNotify("Announcement published successfully!", "success");
       }
@@ -129,16 +135,26 @@ const Announcement = () => {
     }
   };
 
-  const handleDelete = async (id) => {
-    if (window.confirm("Are you sure?")) {
-      const success = await announcementService.deleteAnnouncement(id);
-      if (success) { loadAnnouncements(); setIsDetailsOpen(false); triggerNotify("Removed.", "error"); }
-    }
+  // ✅ UPDATED ARCHIVE LOGIC (Trigger Modal)
+  const triggerArchive = (id) => {
+    setItemToArchive(id);
+    setIsConfirmOpen(true);
   };
 
-  const handleArchive = async (id) => {
-    const result = await announcementService.updateStatus(id, 'Archived');
-    if (result) { loadAnnouncements(); setIsDetailsOpen(false); triggerNotify("Archived.", "success"); }
+  // ✅ EXECUTING THE ARCHIVE (Soft Delete)
+  const handleConfirmArchive = async () => {
+    try {
+      const success = await announcementService.deleteAnnouncement(itemToArchive);
+      
+      if (!success) throw new Error("Server rejected archive request");
+      
+      loadAnnouncements();
+      setIsDetailsOpen(false);
+      setIsConfirmOpen(false);
+      triggerNotify("Moved to Archive Center", "warning");
+    } catch (err) {
+      triggerNotify("Failed to archive announcement", "error");
+    }
   };
 
   /* ==========================================
@@ -159,13 +175,12 @@ const Announcement = () => {
     { label: 'Archived', value: announcements.filter(a => a.status === 'Archived').length, color: 'text-red-600' },
   ];
 
-  // ✅ Safe return if user is missing
   if (!user) return null;
 
   return (
     <div className="h-full bg-[#f0fdf4] overflow-y-auto relative font-sans">
       
-      {/* HEADER: Updated to use UserContext Profile */}
+      {/* HEADER */}
       <header className={l.header}>
         <div className="relative w-full max-w-2xl"> 
           <Search className="absolute left-3 top-2.5 text-gray-500" size={18} />
@@ -179,10 +194,7 @@ const Announcement = () => {
           <button className="relative text-gray-600 hover:text-green-700"><Bell size={24} /></button>
           
           <div className="flex items-center gap-3 pl-6 border-l border-gray-300">
-            <div 
-              className="text-right hidden md:block cursor-pointer hover:opacity-70 transition-opacity"
-              onClick={() => navigate("/profile-settings")}
-            >
+            <div className="text-right hidden md:block cursor-pointer hover:opacity-70 transition-opacity" onClick={() => navigate("/profile-settings")}>
               <p className="text-sm font-bold text-gray-800 leading-tight">
                 {user.first_name} {user.last_name}
               </p>
@@ -191,21 +203,11 @@ const Announcement = () => {
               </p>
             </div>
             
-            <div 
-              className={`${l.profileCircle} cursor-pointer hover:ring-4 hover:ring-green-100 transition-all overflow-hidden border border-gray-100`}
-              onClick={() => navigate("/profile-settings")}
-            >
+            <div className={`${l.profileCircle} cursor-pointer hover:ring-4 hover:ring-green-100 transition-all overflow-hidden border border-gray-100`} onClick={() => navigate("/profile-settings")}>
               {user.profile_picture ? (
-                <img 
-                  src={`http://localhost:5000${user.profile_picture}`} 
-                  alt="Profile" 
-                  className="w-full h-full object-cover" 
-                />
+                <img src={`http://localhost:5000${user.profile_picture}`} alt="Profile" className="w-full h-full object-cover" />
               ) : (
-                <img 
-                  src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${user.first_name}`} 
-                  alt="Avatar" 
-                />
+                <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${user.first_name}`} alt="Avatar" />
               )}
             </div>
           </div>
@@ -213,9 +215,20 @@ const Announcement = () => {
       </header>
 
       <main className="p-8 space-y-8">
-        <div className={u.titleSection}>
-          <h2 className="text-2xl font-bold text-[#1B5E20]">Announcement</h2>
-          <p className="text-gray-600 text-sm mt-1">Create and manage public announcements for citizens</p>
+        
+        {/* ✅ ADDED ARCHIVE BUTTON TO TITLE SECTION */}
+        <div className="flex justify-between items-end">
+          <div className={u.titleSection}>
+            <h2 className="text-2xl font-bold text-[#1B5E20]">Announcement</h2>
+            <p className="text-gray-600 text-sm mt-1">Create and manage public announcements for citizens</p>
+          </div>
+          
+          <button 
+            onClick={() => navigate("/archive-center")}
+            className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-400 hover:text-emerald-600 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-sm"
+          >
+            <Archive size={14} /> View Archives
+          </button>
         </div>
 
         {/* STATS SECTION */}
@@ -232,10 +245,7 @@ const Announcement = () => {
           {/* CATEGORY & STATUS FILTERS */}
           <div className="flex gap-4 w-full md:w-auto">
             <div className="relative">
-              <div 
-                onClick={(e) => { e.stopPropagation(); setActiveFilter(activeFilter === 'category' ? null : 'category'); }}
-                className={`${u.filterSelect} flex items-center justify-between cursor-pointer min-w-[40] bg-white`}
-              >
+              <div onClick={(e) => { e.stopPropagation(); setActiveFilter(activeFilter === 'category' ? null : 'category'); }} className={`${u.filterSelect} flex items-center justify-between cursor-pointer min-w-[40] bg-white`}>
                 <span className="flex items-center gap-2 truncate">
                   {(() => {
                     const opt = categoryOptions.find(o => o.label === categoryFilter);
@@ -257,10 +267,7 @@ const Announcement = () => {
             </div>
 
             <div className="relative">
-              <div 
-                onClick={(e) => { e.stopPropagation(); setActiveFilter(activeFilter === 'status' ? null : 'status'); }}
-                className={`${u.filterSelect} flex items-center justify-between cursor-pointer min-w-[40] bg-white`}
-              >
+              <div onClick={(e) => { e.stopPropagation(); setActiveFilter(activeFilter === 'status' ? null : 'status'); }} className={`${u.filterSelect} flex items-center justify-between cursor-pointer min-w-[40] bg-white`}>
                 <span className="flex items-center gap-2 truncate">
                   {(() => {
                     const opt = statusOptions.find(o => o.label === statusFilter);
@@ -343,7 +350,27 @@ const Announcement = () => {
       </main>
 
       <CreateAnnouncementModal isOpen={isModalOpen} onClose={handleCloseForm} onCreate={handleAnnouncementSubmit} editData={isEditMode ? selectedAnn : null} />
-      <AnnouncementDetailsModal isOpen={isDetailsOpen} onClose={() => setIsDetailsOpen(false)} announcement={selectedAnn} onDelete={handleDelete} onArchive={handleArchive} onEdit={handleEditClick} />
+      
+      {/* ✅ UPDATED MODAL: Replaced onDelete with onArchive */}
+      <AnnouncementDetailsModal 
+        isOpen={isDetailsOpen} 
+        onClose={() => setIsDetailsOpen(false)} 
+        announcement={selectedAnn} 
+        onArchive={triggerArchive} 
+        onEdit={handleEditClick} 
+      />
+
+      {/* ✅ ADDED CONFIRM DIALOG */}
+      <ConfirmDialog 
+        isOpen={isConfirmOpen}
+        onClose={() => setIsConfirmOpen(false)}
+        onConfirm={handleConfirmArchive}
+        title="Archive Announcement?"
+        message="This announcement will be removed from public view and moved to the system archives."
+        confirmText="Archive Now"
+        type="warning"
+      />
+
       <Notification key={notify.msg} show={notify.show} message={notify.msg} type={notify.type} onClose={() => setNotify({ ...notify, show: false })} />
     </div>
   );

@@ -2,7 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { 
   Search, Trash2, X, ChevronDown, Clock, Calendar as CalendarIcon,
-  AlertTriangle, MapPin, Info, FileText, Eye, Flag, CheckCircle, Navigation
+  AlertTriangle, MapPin, Info, FileText, Eye, Flag, CheckCircle, Navigation,
+  Archive // ✅ Added Archive Icon
 } from 'lucide-react'; 
 import { design } from '../styles/design'; 
 
@@ -14,6 +15,8 @@ import { zoneService } from '../services/zoneService';
 // COMPONENTS
 import ReportDetailsModal from '../components/ReportDetailsModal';
 import ReportNavigationModal from '../components/ReportNavigationModal';
+import ConfirmDialog from '../components/ConfirmDialog'; // ✅ Added ConfirmDialog
+import Notification from '../components/Notification'; // ✅ Added Notification for consistent UX
 
 const CitizenReports = () => {
   const navigate = useNavigate();
@@ -29,6 +32,7 @@ const CitizenReports = () => {
   const [categoryFilter, setCategoryFilter] = useState('All Types');
   const [statusFilter, setStatusFilter] = useState('All Status');
   const [selectedDate, setSelectedDate] = useState('');
+  const [notify, setNotify] = useState({ show: false, msg: '', type: 'success' }); // ✅ Added Notification State
   
   // MODAL & UI STATES
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
@@ -36,6 +40,10 @@ const CitizenReports = () => {
   const [activeFilter, setActiveFilter] = useState(null); 
   const [isNavModalOpen, setIsNavModalOpen] = useState(false);
   const [activeZone, setActiveZone] = useState(null);
+
+  // ✅ NEW ARCHIVE STATES
+  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+  const [itemToArchive, setItemToArchive] = useState(null);
 
   // ✅ ROBUST HELPER: Point in Polygon Logic
   const isPointInPolygon = (lat, lng, polygon) => {
@@ -103,6 +111,8 @@ const CitizenReports = () => {
     return () => window.removeEventListener('click', handleOutsideClick);
   }, [activeFilter]);
 
+  const triggerNotify = (msg, type = 'success') => setNotify({ show: true, msg, type });
+
   const handleViewDetails = (report) => {
     setSelectedReport(report);
     if (zones.length > 0) {
@@ -132,35 +142,46 @@ const CitizenReports = () => {
       if (result.success) {
         setReports(prev => prev.map(r => r.report_id === id ? {...r, status: 'Resolved'} : r));
         setIsDetailsOpen(false);
+        triggerNotify("Report resolved successfully", "success");
       }
     } catch (error) {
       console.error("Failed to resolve report");
+      triggerNotify("Failed to resolve report", "error");
     }
   };
 
-  const handleDelete = async (id) => {
-    if(window.confirm("Delete this report permanently?")) {
-      try {
-        const result = await reportService.deleteReport(id);
-        if (result.success) {
-          setReports(prev => prev.filter(r => r.report_id !== id));
-          setIsDetailsOpen(false);
-        }
-      } catch (error) {
-        console.error("Delete failed", error);
+  // ✅ UPDATED ARCHIVE LOGIC (Trigger Modal)
+  const triggerArchive = (id) => {
+    setItemToArchive(id);
+    setIsConfirmOpen(true);
+  };
+
+  // ✅ EXECUTING THE ARCHIVE (Soft Delete)
+  const handleConfirmArchive = async () => {
+    try {
+      const result = await reportService.deleteReport(itemToArchive);
+      if (result.success) {
+        setReports(prev => prev.filter(r => r.report_id !== itemToArchive));
+        setIsDetailsOpen(false);
+        setIsConfirmOpen(false);
+        triggerNotify("Moved to Archive Center", "warning");
+      } else {
+        throw new Error("Failed to archive");
       }
+    } catch (error) {
+      console.error("Archive failed", error);
+      triggerNotify("Failed to archive report", "error");
+      setIsConfirmOpen(false);
     }
   };
 
   const categoryOptions = [
-  { label: 'All Types', icon: FileText, color: 'text-gray-400' },
-  // Changed "Missed Collection" to "Missed Pickup"
-  { label: 'Missed Pickup', icon: Clock, color: 'text-blue-500' }, 
-  { label: 'Illegal Dumping', icon: Flag, color: 'text-red-500' },
-  // Changed "Overflowing" to "Overflowing Bin"
-  { label: 'Overflowing Bin', icon: AlertTriangle, color: 'text-orange-500' }, 
-  { label: 'Other Issue', icon: Info, color: 'text-purple-500' },
-];
+    { label: 'All Types', icon: FileText, color: 'text-gray-400' },
+    { label: 'Missed Pickup', icon: Clock, color: 'text-blue-500' }, 
+    { label: 'Illegal Dumping', icon: Flag, color: 'text-red-500' },
+    { label: 'Overflowing Bin', icon: AlertTriangle, color: 'text-orange-500' }, 
+    { label: 'Other Issue', icon: Info, color: 'text-purple-500' },
+  ];
 
   const statusOptions = [
     { label: 'All Status', icon: FileText, color: 'text-gray-400' },
@@ -244,9 +265,20 @@ const CitizenReports = () => {
       </header>
 
       <main className="p-8 space-y-8 animate-in fade-in duration-700">
-        <div className={u.titleSection}>
-          <h2 className="text-2xl font-bold text-[#1B5E20]">Citizen Reports</h2>
-          <p className="text-gray-600 text-sm mt-1">Review community feedback from the mobile app</p>
+        
+        {/* ✅ ADDED ARCHIVE BUTTON TO TITLE SECTION */}
+        <div className="flex justify-between items-end">
+          <div className={u.titleSection}>
+            <h2 className="text-2xl font-bold text-[#1B5E20]">Citizen Reports</h2>
+            <p className="text-gray-600 text-sm mt-1">Review community feedback from the mobile app</p>
+          </div>
+          
+          <button 
+            onClick={() => navigate("/archive-center")}
+            className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-400 hover:text-emerald-600 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-sm"
+          >
+            <Archive size={14} /> View Archives
+          </button>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -374,11 +406,12 @@ const CitizenReports = () => {
                         <button onClick={() => handleViewDetails(item)} className="flex-1 py-3 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-600 transition-all flex items-center justify-center gap-2 shadow-lg shadow-slate-200">
                           <Eye size={14} /> Details
                         </button>
-                        <button onClick={() => handleNavigateClick(item)} className="p-3 bg-emerald-50 text-emerald-600 rounded-xl hover:bg-emerald-600 hover:text-white transition-all border border-emerald-100">
+                        <button onClick={() => handleNavigateClick(item)} className="p-3 bg-emerald-50 text-emerald-600 rounded-xl hover:bg-emerald-600 hover:text-white transition-all border border-emerald-100" title="Navigate to location">
                           <Navigation size={16} />
                         </button>
-                        <button onClick={() => handleDelete(item.report_id)} className="p-3 bg-rose-50 text-rose-500 rounded-xl hover:bg-rose-500 hover:text-white transition-all border border-rose-100">
-                          <Trash2 size={16} />
+                        {/* ✅ REPLACED DELETE ICON WITH ARCHIVE ICON */}
+                        <button onClick={() => triggerArchive(item.report_id)} className="p-3 bg-rose-50 text-rose-500 rounded-xl hover:bg-rose-500 hover:text-white transition-all border border-rose-100" title="Move to Archive">
+                          <Archive size={16} />
                         </button>
                     </div>
                   </div>
@@ -412,8 +445,24 @@ const CitizenReports = () => {
           zone={activeZone} 
           onAssign={() => {}}
           onResolve={() => handleResolve(selectedReport.report_id)}
+          // Pass the archive trigger to the details modal if needed
+          onArchive={() => triggerArchive(selectedReport.report_id)} 
         />
       )}
+
+      {/* ✅ ADDED CONFIRM DIALOG FOR ARCHIVING */}
+      <ConfirmDialog 
+        isOpen={isConfirmOpen}
+        onClose={() => setIsConfirmOpen(false)}
+        onConfirm={handleConfirmArchive}
+        title="Archive Report?"
+        message="This report will be removed from the active list and moved to the system archives. You can review it later in the Archive Center."
+        confirmText="Archive Now"
+        type="warning"
+      />
+
+      {/* ✅ ADDED NOTIFICATION FOR SUCCESS/ERROR ALERTS */}
+      <Notification key={notify.msg} show={notify.show} message={notify.msg} type={notify.type} onClose={() => setNotify({ ...notify, show: false })} />
     </div>
   );
 };
