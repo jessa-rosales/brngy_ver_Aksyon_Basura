@@ -16,9 +16,13 @@ const getMobileAssignment = async (req, res) => {
         z.zone_name, 
         z.zone_color, 
         z.boundaries,
+        v.vehicle_id,
         v.vehicle_name,
         v.plate_number,
-        v.status as vehicle_status
+        v.status as vehicle_status,
+        -- 👇 FETCH THE TRUCK'S LIVE LOCATION
+        ST_Y(v.current_location::geometry) as truck_lat,
+        ST_X(v.current_location::geometry) as truck_lng
       FROM task_assignments ta
       LEFT JOIN task_collectors tc ON ta.task_id = tc.task_id
       JOIN zones z ON ta.zone_id = z.zone_id
@@ -113,5 +117,45 @@ const confirmBinCollection = async (req, res) => {
   }
 };
 
-// Don't forget to export it!
-module.exports = { getMobileAssignment, saveCollectionRecord, confirmBinCollection };
+// 🚚 NEW: Driver continuously updates the truck's location
+const updateVehicleLocation = async (req, res) => {
+  const { vehicle_id, lat, lng } = req.body;
+
+  // 1. Log what we actually received from the phone!
+  console.log(`📡 RECEIVED GPS -> Vehicle: ${vehicle_id}, Lat: ${lat}, Lng: ${lng}`);
+
+  if (!vehicle_id || !lat || !lng) {
+      console.log("❌ Missing data! Cannot update location.");
+      return res.status(400).json({ error: "Missing required location data" });
+  }
+
+  try {
+    // 2. Force casting to numeric to prevent PostGIS errors
+    const updateQuery = `
+      UPDATE vehicles 
+      SET current_location = ST_SetSRID(ST_MakePoint($1::numeric, $2::numeric), 4326)
+      WHERE vehicle_id = $3
+      RETURNING vehicle_id;
+    `;
+    const result = await pool.query(updateQuery, [lng, lat, vehicle_id]);
+
+    if (result.rows.length === 0) {
+        console.log(`❌ Vehicle ID ${vehicle_id} not found in database!`);
+    } else {
+        console.log(`✅ Successfully updated GPS for vehicle ${vehicle_id}`);
+    }
+
+    res.status(200).json({ success: true });
+  } catch (error) {
+    console.error("❌ Update Vehicle Location Error:", error);
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// Update your exports!
+module.exports = { 
+  getMobileAssignment, 
+  saveCollectionRecord, 
+  confirmBinCollection, 
+  updateVehicleLocation 
+};
