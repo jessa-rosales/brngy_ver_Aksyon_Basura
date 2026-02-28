@@ -39,6 +39,7 @@ import ScheduleScreen from '../pages/ScheduleScreen';
 import TrackScreen from '../pages/TrackScreen';
 import DriverRouteScreen from '../pages/DriverRouteScreen';
 import CameraCaptureScreen from '../pages/CameraCaptureScreen';
+import CitizenTask from '../pages/CitizenTask';
 
 const { width } = Dimensions.get('window');
 const Stack = createStackNavigator();
@@ -145,7 +146,7 @@ const StaffTabs = ({ role }) => {
       })}
     >
       <Tab.Screen name="Route" component={DriverRouteScreen} initialParams={{ role: role }} />
-      <Tab.Screen name="Citizen Task" component={PlaceholderScreen} />
+      <Tab.Screen name="Citizen Task" component={CitizenTask} />
       <Tab.Screen name="Feed" component={FeedScreen} />
       <Tab.Screen name="News" component={NewsScreen} />
       <Tab.Screen name="Schedule" component={ScheduleScreen} />
