@@ -1,10 +1,10 @@
 import React from 'react';
 import { 
   X, MapPin, Clock, Phone, User, 
-  CheckCircle, AlertTriangle, ShieldCheck, Users
+  CheckCircle, AlertTriangle, ShieldCheck, Users, Archive, Truck
 } from 'lucide-react';
 
-const ReportDetailsModal = ({ isOpen, onClose, report, zone, onAssign, onResolve }) => {
+const ReportDetailsModal = ({ isOpen, onClose, report, zone, onAssign, onResolve, onArchive }) => {
   if (!isOpen || !report) return null;
 
   // Formatting date for real backend timestamp
@@ -92,19 +92,14 @@ const ReportDetailsModal = ({ isOpen, onClose, report, zone, onAssign, onResolve
                   <div 
                     className="px-3 py-1.5 rounded-full flex items-center gap-2.5 border shadow-sm transition-all"
                     style={{ 
-                      // Background is a very faint version of the zone color
                       backgroundColor: `${zone.zone_color}10`, 
-                      // Border is a semi-transparent version of the zone color
                       borderColor: `${zone.zone_color}40` 
                     }}
                   >
-                    {/* The Pulse Dot remains the actual zone color */}
                     <div 
                       className="w-2.5 h-2.5 rounded-full animate-pulse shadow-[0_0_8px_rgba(0,0,0,0.1)]" 
                       style={{ backgroundColor: zone.zone_color }}
                     />
-                    
-                    {/* Text is now a constant Dark Slate for maximum readability */}
                     <span className="text-[10px] font-black uppercase tracking-widest text-slate-700">
                       Zone: {zone.zone_name}
                     </span>
@@ -125,6 +120,26 @@ const ReportDetailsModal = ({ isOpen, onClose, report, zone, onAssign, onResolve
           </div>
 
           <div className="h-px w-full bg-slate-100" />
+
+          {/* ✅ ASSIGNED TEAM SECTION (Always visible, changes style based on assignment) */}
+          <div className={`p-6 rounded-[28px] border space-y-4 ${report.assigned_driver_name ? 'bg-emerald-50/50 border-emerald-100' : 'bg-slate-50 border-slate-200 border-dashed'}`}>
+            <h4 className={`text-[10px] font-black uppercase tracking-[0.2em] ${report.assigned_driver_name ? 'text-emerald-600' : 'text-slate-400'}`}>
+              Deployment Details
+            </h4>
+            <div className="flex items-center gap-4">
+              <div className={`w-12 h-12 rounded-2xl bg-white border flex items-center justify-center shadow-sm ${report.assigned_driver_name ? 'border-emerald-200 text-emerald-600' : 'border-slate-200 text-slate-300'}`}>
+                <Truck size={22} />
+              </div>
+              <div>
+                <p className={`text-[10px] font-bold uppercase leading-none mb-1 ${report.assigned_driver_name ? 'text-emerald-600/60' : 'text-slate-400'}`}>
+                  Assigned Driver
+                </p>
+                <p className={`text-sm font-black ${report.assigned_driver_name ? 'text-slate-800' : 'text-slate-400 italic'}`}>
+                  {report.assigned_driver_name || "Pending Assignment"}
+                </p>
+              </div>
+            </div>
+          </div>
 
           {/* Reporter & Contact Details */}
           <div className="bg-slate-50/50 p-6 rounded-[28px] border border-slate-100 space-y-5">
@@ -149,7 +164,7 @@ const ReportDetailsModal = ({ isOpen, onClose, report, zone, onAssign, onResolve
                 </div>
              </div>
 
-             {/* Contact Number (Fetched directly from users table via JOIN) */}
+             {/* Contact Number */}
              <div className="flex items-center gap-4">
                 <div className="w-12 h-12 rounded-2xl bg-white border border-slate-200 flex items-center justify-center text-emerald-600 shadow-sm">
                    <Phone size={20} />
@@ -176,19 +191,34 @@ const ReportDetailsModal = ({ isOpen, onClose, report, zone, onAssign, onResolve
         </div>
 
         {/* Footer Actions */}
-        <div className="p-8 border-t border-slate-50 flex gap-4 bg-white shrink-0">
-           <button 
-             onClick={() => onAssign(report)}
-             className="flex-1 py-4 bg-white border border-emerald-200 text-emerald-600 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-emerald-50 transition-all flex items-center justify-center gap-2"
-           >
-             <Users size={16} /> Assign Team
-           </button>
-           <button 
-             onClick={() => onResolve(report.report_id)}
-             className="flex-[2] py-4 bg-emerald-600 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl shadow-emerald-100 hover:bg-emerald-700 transition-all flex items-center justify-center gap-2"
-           >
-             <CheckCircle size={18} /> Mark as Resolved
-           </button>
+        <div className="p-8 border-t border-slate-50 flex flex-col gap-4 bg-white shrink-0">
+            <div className="flex gap-4">
+              <button 
+                onClick={() => onAssign(report)}
+                className="flex-1 py-4 bg-white border border-emerald-200 text-emerald-600 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-emerald-50 transition-all flex items-center justify-center gap-2"
+              >
+                <Users size={16} /> {report.status === 'In Progress' ? 'Reassign Team' : 'Assign Team'}
+              </button>
+              <button 
+                onClick={() => onResolve(report.report_id)}
+                disabled={report.status === 'Pending'}
+                className={`flex-[2] py-4 rounded-2xl font-black uppercase text-[10px] tracking-widest transition-all flex items-center justify-center gap-2 ${
+                  report.status === 'Pending' 
+                    ? 'bg-emerald-600/50 text-white cursor-not-allowed' 
+                    : 'bg-emerald-600 text-white shadow-xl shadow-emerald-100 hover:bg-emerald-700'
+                }`}
+              >
+                <CheckCircle size={18} /> Mark as Resolved
+              </button>
+            </div>
+            
+            {/* Added Archive Button in Footer */}
+            <button 
+              onClick={() => onArchive(report.report_id)}
+              className="w-full py-3 bg-rose-50 text-rose-500 rounded-xl font-black uppercase text-[9px] tracking-[0.2em] hover:bg-rose-500 hover:text-white transition-all border border-rose-100 flex items-center justify-center gap-2"
+            >
+              <Archive size={14} /> Move to system archives
+            </button>
         </div>
       </div>
     </div>
