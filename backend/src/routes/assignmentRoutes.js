@@ -13,6 +13,7 @@ router.get('/', assignmentController.getAssignments);
 router.post('/', assignmentController.createAssignment);
 
 router.put('/:id', assignmentController.updateAssignment);
+router.delete('/:id', assignmentController.deleteAssignment);
 
 //MY SCHEDULE SCREEN MOBILE
 router.get('/staff/:userId', authorize, assignmentController.getStaffSchedule);

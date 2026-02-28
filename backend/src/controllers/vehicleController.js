@@ -18,7 +18,7 @@ const vehicleController = {
 
   getVehicles: async (req, res) => {
     try {
-      const result = await pool.query("SELECT * FROM public.vehicles ORDER BY vehicle_id DESC");
+      const result = await pool.query("SELECT * FROM public.vehicles WHERE is_archived = false ORDER BY vehicle_id DESC");
       res.json(result.rows);
     } catch (err) {
       res.status(500).json([]);
@@ -49,14 +49,25 @@ const vehicleController = {
   },
 
   // ✅ DUGANGI KINI NGA METHOD (DELETE)
+ // ✅ UPDATED TO SOFT DELETE (ARCHIVE)
+  // ✅ MUST USE UPDATE FOR SOFT DELETE (ARCHIVE)
   deleteVehicle: async (req, res) => {
     try {
       const { id } = req.params;
-      // Note: If the vehicle is assigned to a task, you might need to handle FK constraints
-      await pool.query("DELETE FROM public.vehicles WHERE vehicle_id = $1", [id]);
-      res.json({ success: true, message: "Vehicle deleted" });
+      
+      const result = await pool.query(
+        "UPDATE public.vehicles SET is_archived = true WHERE vehicle_id = $1 RETURNING *", 
+        [id]
+      );
+      
+      if (result.rowCount === 0) {
+          return res.status(404).json({ error: "Vehicle not found" });
+      }
+      
+      res.json({ success: true, message: "Vehicle moved to Archive Center" });
     } catch (err) {
-      res.status(500).json({ error: "Cannot delete vehicle. It might be linked to an active assignment." });
+      console.error(err);
+      res.status(500).json({ error: "Failed to archive vehicle." });
     }
   }
 };

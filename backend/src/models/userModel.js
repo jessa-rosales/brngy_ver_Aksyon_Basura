@@ -8,7 +8,7 @@ const UserModel = {
   },
 
   getAll: async () => {
-    const result = await pool.query("SELECT * FROM users ORDER BY user_id ASC");
+    const result = await pool.query("SELECT * FROM users WHERE is_archived = false ORDER BY user_id ASC");
     return result.rows;
   },
 
@@ -100,7 +100,16 @@ const UserModel = {
       const result = await pool.query(query, values);
       return result.rows[0];
     }
+  },
+
+  archive: async (id) => {
+    const result = await pool.query(
+      "UPDATE users SET is_archived = true WHERE user_id = $1 RETURNING *",
+      [id]
+    );
+    return result.rows[0];
   }
+
 };
 
 module.exports = UserModel;

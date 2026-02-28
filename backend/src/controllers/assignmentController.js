@@ -6,16 +6,16 @@ const assignmentController = {
   getOptions: async (req, res) => {
     try {
       const drivers = await pool.query(
-        "SELECT user_id, first_name, last_name FROM users WHERE role::text = 'Driver' AND status = 'Active' ORDER BY first_name ASC"
+        "SELECT user_id, first_name, last_name FROM users WHERE role::text = 'Driver' AND status = 'Active' AND is_archived = false ORDER BY first_name ASC"
       );
       const collectors = await pool.query(
-        "SELECT user_id, first_name, last_name FROM users WHERE role::text = 'Collector' AND status = 'Active' ORDER BY first_name ASC"
+        "SELECT user_id, first_name, last_name FROM users WHERE role::text = 'Collector' AND status = 'Active' AND is_archived = false ORDER BY first_name ASC"
       );
       const vehicles = await pool.query(
-        "SELECT vehicle_id, vehicle_name FROM vehicles WHERE status = 'Active' ORDER BY vehicle_name ASC"
+        "SELECT vehicle_id, vehicle_name FROM vehicles WHERE status = 'Active' AND is_archived = false ORDER BY vehicle_name ASC"
       );
       const zones = await pool.query(
-        "SELECT zone_id, zone_name FROM zones ORDER BY zone_name ASC"
+        "SELECT zone_id, zone_name FROM zones WHERE is_archived = false ORDER BY zone_name ASC"
       );
 
       res.json({
@@ -115,7 +115,23 @@ const assignmentController = {
       console.error("Staff Schedule Error:", err);
       res.status(500).json({ error: "Internal Server Error" });
     }
-}
+},
+
+deleteAssignment: async (req, res) => {
+    try {
+      const { id } = req.params;
+      const archivedTask = await assignmentModel.archive(id);
+      
+      if (!archivedTask) {
+        return res.status(404).json({ error: "Task assignment not found" });
+      }
+      
+      res.status(200).json({ message: "Task moved to Archive Center" });
+    } catch (err) {
+      console.error("Archive Error:", err);
+      res.status(500).json({ error: "Failed to archive task" });
+    }
+  }
   
 };
 
