@@ -45,16 +45,22 @@ export const vehicleService = {
     }
   },
 
-  delete: async (id) => {
+  deleteVehicle: async (id) => {
     try {
-      // Requires token for administrative deletion
-      const res = await fetch(`${API_URL}/${id}`, {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`http://localhost:5000/api/vehicles/${id}`, {
         method: 'DELETE',
-        headers: getHeaders()
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
       });
-      return await res.json();
-    } catch (err) {
-      return { error: "Network Error: Failed to delete vehicle" };
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Failed to archive vehicle");
+      return data;
+    } catch (error) {
+      console.error("Service Error:", error);
+      return { error: error.message };
     }
   }
 };

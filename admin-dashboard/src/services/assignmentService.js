@@ -43,4 +43,30 @@ export const assignmentService = {
       return { error: "Network Error: Failed to update assignment" };
     }
   },
+
+  // Add this inside your assignmentService object
+deleteAssignment: async (id) => {
+  try {
+    const token = localStorage.getItem('token'); // Get token for auth
+    const response = await fetch(`http://localhost:5000/api/assignments/${id}`, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    // Always parse the JSON response from your backend
+    const data = await response.json();
+    
+    if (!response.ok) {
+        throw new Error(data.error || "Failed to archive assignment");
+    }
+    
+    return data; 
+  } catch (error) {
+    console.error("Service Error:", error);
+    return { error: error.message };
+  }
+}
 };

@@ -154,10 +154,16 @@ const CreateAssignmentModal = ({
     end_date: '',
   });
 
-  // ✅ CREW PAGINATION STATE
+  // ✅ FILTER OUT ARCHIVED DATA HERE
+  const activeDrivers = (dataOptions?.drivers || []).filter(d => !d.is_archived);
+  const activeCollectors = (dataOptions?.collectors || []).filter(c => !c.is_archived);
+  const activeVehicles = (dataOptions?.vehicles || []).filter(v => !v.is_archived);
+  const activeZones = (dataOptions?.zones || []).filter(z => !z.is_archived);
+
+  // ✅ CREW PAGINATION STATE (USING ONLY ACTIVE COLLECTORS)
   const [crewPage, setCrewPage] = useState(0);
   const crewPerPage = 6; // 2 rows * 3 columns
-  const totalCrewPages = Math.ceil((dataOptions?.collectors?.length || 0) / crewPerPage);
+  const totalCrewPages = Math.ceil((activeCollectors.length || 0) / crewPerPage);
 
   const [activeDropdown, setActiveDropdown] = useState(null);
   const dropdownRef = useRef(null);
@@ -210,8 +216,8 @@ const CreateAssignmentModal = ({
   const labelStyle = "flex items-center gap-2 text-[10px] font-black text-slate-400 mb-2 uppercase tracking-[0.2em]";
   const inputStyle = "w-full px-5 py-3.5 rounded-2xl border border-slate-200 bg-slate-50/50 outline-none focus:bg-white focus:ring-4 focus:ring-emerald-500/5 focus:border-emerald-500 transition-all duration-150 text-sm font-bold text-slate-700 appearance-none";
 
-  // PAGINATION LOGIC
-  const currentCrew = dataOptions?.collectors?.slice(crewPage * crewPerPage, (crewPage + 1) * crewPerPage) || [];
+  // PAGINATION LOGIC (USING ONLY ACTIVE COLLECTORS)
+  const currentCrew = activeCollectors.slice(crewPage * crewPerPage, (crewPage + 1) * crewPerPage) || [];
 
   return (
     <AnimatePresence>
@@ -276,7 +282,7 @@ const CreateAssignmentModal = ({
               className="p-10 overflow-y-auto custom-scrollbar space-y-8"
               ref={dropdownRef}
             >
-              {/* Row 1: Fleet & Driver Dropdowns */}
+              {/* Row 1: Fleet & Driver Dropdowns (USING ACTIVE LISTS) */}
               <motion.div 
                 variants={itemVars} 
                 className="grid grid-cols-1 md:grid-cols-2 gap-8"
@@ -284,7 +290,7 @@ const CreateAssignmentModal = ({
                 <CustomDropdown 
                   label="Fleet Asset" 
                   icon={Truck} 
-                  options={dataOptions?.vehicles || []} 
+                  options={activeVehicles} 
                   value={formData.vehicle_id} 
                   onChange={(v) => setFormData({...formData, vehicle_id: v})} 
                   placeholder="Assign a vehicle" 
@@ -293,7 +299,7 @@ const CreateAssignmentModal = ({
                 <CustomDropdown 
                   label="Lead Driver" 
                   icon={User} 
-                  options={dataOptions?.drivers || []} 
+                  options={activeDrivers} 
                   value={formData.driver_id} 
                   onChange={(v) => setFormData({...formData, driver_id: v})} 
                   placeholder="Assign lead driver" 
@@ -301,7 +307,7 @@ const CreateAssignmentModal = ({
                 />
               </motion.div>
 
-              {/* ✅ UPDATED CREW SELECTION WITH PAGINATION */}
+              {/* CREW SELECTION WITH PAGINATION */}
               <motion.div 
                 variants={itemVars}
               >
@@ -407,7 +413,7 @@ const CreateAssignmentModal = ({
                 </div>
               </motion.div>
 
-              {/* Row 3: Zone & Days */}
+              {/* Row 3: Zone & Days (USING ACTIVE ZONES) */}
               <motion.div 
                 variants={itemVars} 
                 className="grid grid-cols-1 lg:grid-cols-2 gap-8"
@@ -415,7 +421,7 @@ const CreateAssignmentModal = ({
                 <CustomDropdown 
                   label="Service Zone" 
                   icon={MapPin} 
-                  options={dataOptions?.zones || []} 
+                  options={activeZones} 
                   value={formData.zone_id} 
                   onChange={(v) => setFormData({...formData, zone_id: v})} 
                   placeholder="Select area" 

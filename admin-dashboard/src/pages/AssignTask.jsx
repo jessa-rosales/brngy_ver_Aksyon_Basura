@@ -5,12 +5,12 @@ import {
   Search, Bell, User, Truck, Users, MapPin, 
   Plus, Edit3, Trash2, Calendar, Clock, 
   RefreshCw, Wrench, Ban, X,
-  SortAsc, SortDesc, AlertCircle 
+  SortAsc, SortDesc, AlertCircle, Archive 
 } from 'lucide-react';
 import { design } from '../styles/design';
 
 // SERVICES & CONTEXT
-import { useUser } from '../context/UserContext'; // ✅ Added UserContext
+import { useUser } from '../context/UserContext';
 import { assignmentService } from '../services/assignmentService';
 import { vehicleService } from '../services/vehicleService';
 
@@ -18,10 +18,11 @@ import { vehicleService } from '../services/vehicleService';
 import CreateAssignmentModal from '../components/CreateAssignmentModal';
 import RegisterTruckModal from '../components/RegisterTruckModal';
 import Notification from '../components/Notification';
+import ConfirmDialog from '../components/ConfirmDialog'; 
 
 const AssignTask = () => {
   const navigate = useNavigate();
-  const { user } = useUser(); // ✅ Access global user state
+  const { user } = useUser();
   const [assignments, setAssignments] = useState([]);
   const [trucks, setTrucks] = useState([]); 
   const [isLoading, setIsLoading] = useState(true);
@@ -34,6 +35,14 @@ const AssignTask = () => {
   
   const [editingAssignment, setEditingAssignment] = useState(null);
   const [editingTruck, setEditingTruck] = useState(null);
+
+  // ARCHIVE STATES FOR ASSIGNMENTS
+  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+  const [assignmentToArchive, setAssignmentToArchive] = useState(null);
+
+  // ARCHIVE STATES FOR TRUCKS
+  const [isTruckConfirmOpen, setIsTruckConfirmOpen] = useState(false);
+  const [truckToArchive, setTruckToArchive] = useState(null);
 
   const [dataOptions, setDataOptions] = useState({
     drivers: [], collectors: [], vehicles: [], zones: []
@@ -80,7 +89,6 @@ const AssignTask = () => {
     }
   }, []);
 
-  // ✅ Updated useEffect: Standard Auth Check & Data Load
   useEffect(() => {
     if (!user) {
       navigate("/login");
@@ -145,6 +153,52 @@ const AssignTask = () => {
   const handleEditAssignmentClick = (row) => { setEditingAssignment(row); setIsModalOpen(true); };
   const handleEditTruckClick = (truck) => { setEditingTruck(truck); setIsTruckModalOpen(true); };
 
+  // ARCHIVE LOGIC (Assignments)
+  const triggerArchive = (id) => {
+    setAssignmentToArchive(id);
+    setIsConfirmOpen(true);
+  };
+
+  const handleConfirmArchive = async () => {
+    try {
+      const result = await assignmentService.deleteAssignment(assignmentToArchive); 
+      if (!result?.error) {
+        await loadData();
+        triggerNotif("Assignment moved to Archive Center.", "warning");
+      } else {
+        triggerNotif(result.error || "Failed to archive assignment.", "error");
+      }
+    } catch (error) {
+      triggerNotif("Connection error.", "error");
+    } finally {
+      setIsConfirmOpen(false);
+      setAssignmentToArchive(null);
+    }
+  };
+
+  // ARCHIVE LOGIC (Trucks)
+  const triggerTruckArchive = (id) => {
+    setTruckToArchive(id);
+    setIsTruckConfirmOpen(true);
+  };
+
+  const handleConfirmTruckArchive = async () => {
+    try {
+      const result = await vehicleService.deleteVehicle(truckToArchive); 
+      if (!result?.error) {
+        await loadData();
+        triggerNotif("Vehicle moved to Archive Center.", "warning");
+      } else {
+        triggerNotif(result.error || "Failed to archive vehicle.", "error");
+      }
+    } catch (error) {
+      triggerNotif("Connection error.", "error");
+    } finally {
+      setIsTruckConfirmOpen(false);
+      setTruckToArchive(null);
+    }
+  };
+
   const kpiCards = [
     { label: 'Active Drivers', value: dataOptions.drivers?.length || 0, sub: 'Personnel Ready', icon: User, color: 'text-emerald-600', bg: 'bg-emerald-50' },
     { label: 'Ready Fleet', value: trucks.filter(v => v.status === 'Active').length, sub: 'Ready Assets', icon: Truck, color: 'text-blue-600', bg: 'bg-blue-50' },
@@ -152,7 +206,6 @@ const AssignTask = () => {
     { label: 'Active Teams', value: assignments.filter(a => a.assignment_status === 'Active').length, sub: 'Ongoing Tasks', icon: Users, color: 'text-emerald-600', bg: 'bg-emerald-50' },
   ];
 
-  // ✅ Safe return to prevent layout jump while navigating
   if (!user) return null;
 
   if (isLoading && assignments.length === 0 && trucks.length === 0) {
@@ -168,7 +221,7 @@ const AssignTask = () => {
   return (
     <motion.div initial="hidden" animate="visible" variants={containerVars} className="h-full bg-[#f0fdf4] overflow-y-auto relative font-sans text-slate-700">
       
-      {/* HEADER: Dynamic Profile Logic (Now using Context) */}
+      {/* HEADER */}
       <header className={l.header}>
         <div className="relative w-full max-w-2xl group flex items-center gap-3"> 
           <div className="relative flex-1">
@@ -237,11 +290,20 @@ const AssignTask = () => {
         </div>
       </header>
       
-      {/* ... Rest of the JSX remains exactly as it was ... */}
       <main className="p-8 space-y-8">
-        <motion.div variants={itemVars} className={u.titleSection}>
-          <h2 className="text-3xl font-bold text-[#1B5E20]">Logistics Control</h2>
-          <p className="text-gray-600 text-sm mt-1">Monitor personnel deployment and vehicle fleet</p>
+        
+        <motion.div variants={itemVars} className="flex justify-between items-end">
+          <div className={u.titleSection} style={{ marginBottom: 0 }}>
+            <h2 className="text-3xl font-bold text-[#1B5E20]">Logistics Control</h2>
+            <p className="text-gray-600 text-sm mt-1">Monitor personnel deployment and vehicle fleet</p>
+          </div>
+
+          <button 
+            onClick={() => navigate("/archive-center")}
+            className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-400 hover:text-emerald-600 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-sm"
+          >
+            <Archive size={14} /> View Archives
+          </button>
         </motion.div>
 
         {/* KPI Grid */}
@@ -258,7 +320,7 @@ const AssignTask = () => {
           ))}
         </motion.div>
 
-        <motion.div variants={itemVars} className="bg-white rounded-xl shadow-sm border border-gray-100 border-t-[6px] border-t-[#2B9447] overflow-hidden min-h-125 flex flex-col">
+        <motion.div variants={itemVars} className="bg-white rounded-xl shadow-sm border border-gray-100 border-t-[6px] border-t-[#2B9447] overflow-hidden min-h-[500px] flex flex-col">
           <div className={u.tableControls}>
             <div className="flex bg-gray-100 p-1 rounded-lg relative w-64">
                 <div className={`absolute top-1 bottom-1 left-1 w-[calc(50%-4px)] bg-white rounded-md shadow-sm transition-transform duration-300 ${activeTab === 'trucks' ? 'translate-x-full' : 'translate-x-0'}`} />
@@ -308,17 +370,38 @@ const AssignTask = () => {
                                   ))}
                                 </div>
                               </td>
+
+                              {/* ✅ UPDATED TRUCK FLEET ASSET CELL (ARCHIVE STRIKE-THROUGH LOGIC) */}
                               <td className="px-6 py-6 align-top">
                                 <div className="flex flex-col gap-1.5">
                                   <div className="flex items-center gap-2 text-[12px] font-bold text-slate-700">
-                                    <Truck size={14} className="text-slate-300" /> {row.vehicle_name}
-                                    {row.truck_status && row.truck_status !== 'Active' && (
-                                      <span className={`text-[8px] px-2 py-0.5 rounded-full font-black uppercase tracking-tighter border shadow-sm ${row.truck_status === 'Maintenance' ? 'bg-amber-100 text-amber-700 border-amber-200' : 'bg-rose-100 text-rose-700 border-rose-200'}`}>{row.truck_status}</span>
+                                    <Truck size={14} className={row.truck_archived ? "text-rose-400" : "text-slate-300"} /> 
+                                    
+                                    {/* STRIKETHROUGH TEXT IF ARCHIVED */}
+                                    <span className={row.truck_archived ? "text-slate-400 line-through decoration-rose-400" : ""}>
+                                      {row.vehicle_name}
+                                    </span>
+
+                                    {/* SHOW ARCHIVED BADGE */}
+                                    {row.truck_archived ? (
+                                      <span className="bg-rose-100 text-rose-700 border-rose-200 text-[8px] px-2 py-0.5 rounded-full font-black uppercase tracking-tighter border shadow-sm flex items-center gap-1">
+                                        <Ban size={10} /> Archived
+                                      </span>
+                                    ) : (
+                                      /* Standard Truck Status Badge */
+                                      row.truck_status && row.truck_status !== 'Active' && (
+                                        <span className={`text-[8px] px-2 py-0.5 rounded-full font-black uppercase tracking-tighter border shadow-sm ${row.truck_status === 'Maintenance' ? 'bg-amber-100 text-amber-700 border-amber-200' : 'bg-rose-100 text-rose-700 border-rose-200'}`}>
+                                          {row.truck_status}
+                                        </span>
+                                      )
                                     )}
                                   </div>
-                                  <span className="text-[10px] font-bold text-slate-400 pl-5 tracking-widest uppercase bg-slate-50 w-fit px-1.5 rounded">{row.plate_number || '---'}</span>
+                                  <span className={`text-[10px] font-bold pl-5 tracking-widest uppercase w-fit px-1.5 rounded ${row.truck_archived ? 'text-rose-400 bg-rose-50' : 'text-slate-400 bg-slate-50'}`}>
+                                    {row.plate_number || '---'}
+                                  </span>
                                 </div>
                               </td>
+
                               <td className="px-6 py-6 align-top">
                                 <div className="flex items-center gap-2 text-[11px] font-bold text-slate-600 bg-emerald-50/50 border border-emerald-100 px-3 py-1.5 rounded-xl w-fit"><MapPin size={14} className="text-emerald-500" /> {row.zone_name}</div>
                               </td>
@@ -344,7 +427,7 @@ const AssignTask = () => {
                               <td className="px-6 py-6 text-right align-top">
                                 <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                   <button onClick={() => handleEditAssignmentClick(row)} className="p-2 text-slate-400 hover:text-emerald-600 transition-all bg-white rounded-lg border border-slate-100 shadow-sm"><Edit3 size={16} /></button>
-                                  <button className="p-2 text-slate-400 hover:text-rose-500 transition-all bg-white rounded-lg border border-slate-100 shadow-sm"><Trash2 size={16} /></button>
+                                  <button onClick={() => triggerArchive(row.task_id)} className="p-2 text-slate-400 hover:text-rose-500 transition-all bg-white rounded-lg border border-slate-100 shadow-sm"><Archive size={16} /></button>
                                 </div>
                               </td>
                             </motion.tr>
@@ -416,7 +499,7 @@ const AssignTask = () => {
                             <td className="px-6 py-8 text-right align-top">
                               <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-all">
                                   <button onClick={() => handleEditTruckClick(truck)} className="w-10 h-10 flex items-center justify-center rounded-2xl bg-white border border-slate-100 text-slate-400 hover:text-emerald-600 shadow-sm transition-all active:scale-90"><Edit3 size={18} /></button>
-                                  <button className="w-10 h-10 flex items-center justify-center rounded-2xl bg-white border border-slate-100 text-slate-400 hover:text-rose-500 shadow-sm transition-all active:scale-90"><Trash2 size={18} /></button>
+                                  <button onClick={() => triggerTruckArchive(truck.vehicle_id)} className="w-10 h-10 flex items-center justify-center rounded-2xl bg-white border border-slate-100 text-slate-400 hover:text-rose-500 shadow-sm transition-all active:scale-90"><Archive size={18} /></button>
                               </div>
                             </td>
                           </motion.tr>
@@ -433,6 +516,29 @@ const AssignTask = () => {
 
       <CreateAssignmentModal isOpen={isModalOpen} onClose={() => { setIsModalOpen(false); setEditingAssignment(null); }} onCreate={handleSaveAssignment} dataOptions={dataOptions} editingData={editingAssignment} />
       <RegisterTruckModal isOpen={isTruckModalOpen} onClose={() => { setIsTruckModalOpen(false); setEditingTruck(null); }} onCreate={handleRegisterVehicle} editingData={editingTruck} />
+      
+      {/* CONFIRM DIALOG FOR ASSIGNMENTS */}
+      <ConfirmDialog 
+        isOpen={isConfirmOpen}
+        onClose={() => setIsConfirmOpen(false)}
+        onConfirm={handleConfirmArchive}
+        title="Archive Assignment?"
+        message="This operational team assignment will be removed from the active schedule and moved to the system archives."
+        confirmText="Archive Now"
+        type="warning"
+      />
+
+      {/* CONFIRM DIALOG FOR TRUCKS */}
+      <ConfirmDialog 
+        isOpen={isTruckConfirmOpen}
+        onClose={() => setIsTruckConfirmOpen(false)}
+        onConfirm={handleConfirmTruckArchive}
+        title="Archive Fleet Asset?"
+        message="This vehicle will be removed from the active fleet and moved to the system archives."
+        confirmText="Archive Now"
+        type="warning"
+      />
+
       <Notification show={notif.show} message={notif.message} type={notif.type} onClose={() => setNotif({ ...notif, show: false })} />
     </motion.div>
   );

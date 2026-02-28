@@ -4,11 +4,12 @@ import AddUserModal from '../components/AddUserModal';
 import { 
   Search, Bell, Edit, Trash2, UserPlus, ChevronDown, X, Users, 
   ShieldCheck, Truck, HardHat, UserCircle, Eye, Mail, Phone, 
-  Fingerprint, Calendar, Shield, BadgeCheck, MapPin, User, Cake 
+  MapPin, User, Cake, Archive // ✅ Added Archive Icon
 } from 'lucide-react'; 
 import { design } from '../styles/design'; 
 import Notification from '../components/Notification';
 import { userService } from '../services/userService';
+import ConfirmDialog from '../components/ConfirmDialog'; // ✅ Added ConfirmDialog
 
 // CONTEXT
 import { useUser } from '../context/UserContext';
@@ -17,15 +18,23 @@ const UserManagement = () => {
   const navigate = useNavigate();
   const { user: adminUser } = useUser();
   const [searchTerm, setSearchTerm] = useState('');
+  
+  // FILTERS
   const [filterRole, setFilterRole] = useState('All Types');
+  const [filterStatus, setFilterStatus] = useState('All Status'); // ✅ NEW STATUS FILTER
+  
   const [users, setUsers] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null); 
   
-  // NEW STATE FOR VIEWING USER
+  const [isProcessing, setIsProcessing] = useState(false);
   const [viewUser, setViewUser] = useState(null); 
   
   const [notify, setNotify] = useState({ show: false, msg: '', type: 'success' });
+
+  // ✅ NEW ARCHIVE STATES
+  const [isConfirmOpen, setIsConfirmOpen] = useState(false);
+  const [userToArchive, setUserToArchive] = useState(null);
 
   const { layout: l, userManagement: u } = design;
 
@@ -44,7 +53,8 @@ const UserManagement = () => {
   const loadUsers = async () => {
     try {
       const data = await userService.getUsers();
-      setUsers(data || []);
+      // Safely filter out archived users just in case the backend sends them
+      setUsers(data ? data.filter(u => !u.is_archived) : []);
     } catch (err) {
       console.error("Component: Failed to load users");
     }
@@ -59,27 +69,77 @@ const UserManagement = () => {
   };
 
   const handleSaveUser = async (userData) => {
+    if (isProcessing) return; 
+    setIsProcessing(true);
+
     try {
+      const newPhone = (userData.phone || userData.contact_number || '').trim();
+      const newFirstName = (userData.firstName || userData.first_name || '').trim().toLowerCase();
+      const newLastName = (userData.lastName || userData.last_name || '').trim().toLowerCase();
+      const newEmail = (userData.email || '').trim().toLowerCase();
+      
+      const isEdit = !!selectedUser;
+      const currentUserId = selectedUser ? selectedUser.user_id : null;
+
+      const phoneRegex = /^09\d{9}$/;
+      if (!phoneRegex.test(newPhone)) {
+        triggerNotify("Number must start with 09 and be exactly 11 digits.", "error");
+        setIsProcessing(false);
+        return;
+      }
+
+      for (const existingUser of users) {
+        if (isEdit && existingUser.user_id === currentUserId) continue;
+
+        const existFirstName = (existingUser.first_name || '').trim().toLowerCase();
+        const existLastName = (existingUser.last_name || '').trim().toLowerCase();
+        const existEmail = (existingUser.email || '').trim().toLowerCase();
+        const existPhone = (existingUser.contact_number || '').trim();
+
+        if (newFirstName === existFirstName && newLastName === existLastName) {
+          triggerNotify("A user with this full name already exists.", "error");
+          setIsProcessing(false);
+          return;
+        }
+
+        if (newEmail === existEmail) {
+          triggerNotify("This email is already registered.", "error");
+          setIsProcessing(false);
+          return;
+        }
+
+        if (newPhone === existPhone) {
+          triggerNotify("This contact number is already in use.", "error");
+          setIsProcessing(false);
+          return;
+        }
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 800));
+
       let response;
-      if (selectedUser) {
+      if (isEdit) {
         response = await userService.updateUser(selectedUser.user_id, userData);
       } else {
         response = await userService.addUser(userData);
       }
 
-      if (response && response.message) {
-        const errors = ["Number already been use", "Gmail already been use", "This full name already exists."];
-        if (errors.includes(response.message)) {
-          triggerNotify(response.message, "error");
-          return; 
-        }
+      if (response && response.message && (
+        response.message.includes("use") || response.message.includes("exists")
+      )) {
+        triggerNotify(response.message, "error");
+        setIsProcessing(false);
+        return; 
       }
 
-      triggerNotify(selectedUser ? "User updated successfully!" : "User added successfully!", "success");
-      loadUsers();
+      triggerNotify(isEdit ? "User updated successfully!" : "User added successfully!", "success");
+      await loadUsers();
       closeModal();
     } catch (err) {
-      triggerNotify("Connection error.", "error");
+      const errorMsg = err.response?.data?.message || err.message || "Connection error.";
+      triggerNotify(errorMsg, "error");
+    } finally {
+      setIsProcessing(false); 
     }
   };
 
@@ -90,27 +150,50 @@ const UserManagement = () => {
   };
 
   const closeModal = () => {
+    if (isProcessing) return; 
     setIsModalOpen(false);
     setSelectedUser(null);
   };
 
-  const handleDeleteUser = async (id, e) => {
-    e.stopPropagation(); 
-    if (window.confirm("Are you sure you want to delete this user?")) {
-      const success = await userService.deleteUser(id);
+  // ✅ UPDATED ARCHIVE LOGIC (Trigger Modal)
+  const triggerArchive = (id, e) => {
+    e.stopPropagation();
+    setUserToArchive(id);
+    setIsConfirmOpen(true);
+  };
+
+  // ✅ EXECUTING THE ARCHIVE (Soft Delete)
+  const handleConfirmArchive = async () => {
+    try {
+      // Calls existing deleteUser method which the backend now handles as an Archive
+      const success = await userService.deleteUser(userToArchive);
       if (success) {
         loadUsers();
-        triggerNotify("User deleted successfully.", "error");
+        triggerNotify("User moved to Archive Center.", "warning");
+      } else {
+        triggerNotify("Failed to archive user.", "error");
       }
+    } catch (error) {
+      triggerNotify("Connection error.", "error");
+    } finally {
+      setIsConfirmOpen(false);
+      setUserToArchive(null);
     }
   };
 
+  // ✅ UPDATED FILTER LOGIC: Now checks both Role AND Status
   const filteredUsers = users.filter(user => {
-    const fullName = `${user.first_name} ${user.last_name}`;
-    const matchesSearch = fullName.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                          user.email.toLowerCase().includes(searchTerm.toLowerCase());
+    const fullName = `${user.first_name} ${user.last_name}`.toLowerCase();
+    const searchLower = searchTerm.toLowerCase();
+    
+    const matchesSearch = fullName.includes(searchLower) || (user.email && user.email.toLowerCase().includes(searchLower));
     const matchesRole = filterRole === 'All Types' || user.role === filterRole;
-    return matchesSearch && matchesRole;
+    
+    // Default to 'Active' if status is missing in DB, just to be safe
+    const userStatus = user.status || 'Active'; 
+    const matchesStatus = filterStatus === 'All Status' || userStatus === filterStatus;
+    
+    return matchesSearch && matchesRole && matchesStatus;
   });
 
   if (!adminUser) return null;
@@ -152,9 +235,20 @@ const UserManagement = () => {
       </header>
 
       <main className="p-8">
-        <div className={u.titleSection} >
-          <h2 className="text-2xl font-bold text-[#1B5E20]">User Management</h2>
-          <p className="text-gray-600 text-sm mt-1">Manage collectors, officers, and citizen accounts</p>
+        
+        {/* ✅ ADDED ARCHIVE BUTTON TO TITLE SECTION */}
+        <div className="flex justify-between items-end mb-6">
+          <div className={u.titleSection} style={{ marginBottom: 0 }}>
+            <h2 className="text-2xl font-bold text-[#1B5E20]">User Management</h2>
+            <p className="text-gray-600 text-sm mt-1">Manage collectors, officers, and citizen accounts</p>
+          </div>
+          
+          <button 
+            onClick={() => navigate("/archive-center")}
+            className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-400 hover:text-emerald-600 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-sm"
+          >
+            <Archive size={14} /> View Archives
+          </button>
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
@@ -166,20 +260,33 @@ const UserManagement = () => {
         </div>
 
         <div className={u.tableControls}>
-          <div className="flex gap-4 w-full md:w-auto">
+          <div className="flex flex-wrap gap-4 w-full md:w-auto">
+            
+            {/* ROLE FILTER */}
             <div className="relative">
               <select value={filterRole} onChange={(e) => setFilterRole(e.target.value)} className={u.filterSelect}>
-                <option>All Types</option>
-                <option>Admin</option>
-                <option>Collector</option>
-                <option>Driver</option>
-                <option>Citizen</option>
+                <option value="All Types">All Roles</option>
+                <option value="Admin">Admin</option>
+                <option value="Collector">Collector</option>
+                <option value="Driver">Driver</option>
+                <option value="Citizen">Citizen</option>
               </select>
-              <ChevronDown className="absolute right-2 top-3 text-gray-500 pointer-events-none" size={16} />
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" size={16} />
             </div>
+
+            {/* ✅ NEW STATUS FILTER */}
+            <div className="relative">
+              <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className={u.filterSelect}>
+                <option value="All Status">All Status</option>
+                <option value="Active">Active</option>
+                <option value="Inactive">Inactive</option>
+              </select>
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" size={16} />
+            </div>
+
           </div>
 
-          <button onClick={() => { setSelectedUser(null); setIsModalOpen(true); }} className="bg-[#4CAF50] hover:bg-[#43A047] text-white px-5 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2 shadow-sm transition-all">
+          <button onClick={() => { setSelectedUser(null); setIsModalOpen(true); }} className="bg-[#4CAF50] hover:bg-[#43A047] text-white px-5 py-2.5 rounded-lg text-sm font-bold flex items-center gap-2 shadow-sm transition-all mt-4 md:mt-0">
             <UserPlus size={18} /> Add User
           </button>
         </div>
@@ -199,63 +306,86 @@ const UserManagement = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {filteredUsers.map((user) => (
-                  <tr 
-                    key={user.user_id} 
-                    className={`${u.tableRow} cursor-pointer hover:bg-green-50/50 transition-colors`}
-                    onClick={() => setViewUser(user)} 
-                  >
-                    <td className={`${u.tableCell} font-medium`}>#{user.user_id}</td>
-                    <td className={`${u.tableCell} font-bold text-gray-800`}>{user.first_name} {user.last_name}</td>
-                    <td className={u.tableCell}>{user.contact_number}</td>
-                    <td className={u.tableCell}>{user.email}</td>
-                    <td className={u.tableCell}>
-                      <span className={user.role === 'Admin' ? u.badgeAdmin : user.role === 'Collector' ? u.badgeCollector : user.role === 'Driver' ? u.badgeDriver : u.badgeCitizen}>
-                        {user.role}
-                      </span>
-                    </td>
-                    <td className={u.tableCell}>
-                      <span className={user.status === 'Active' ? u.statusActive : u.statusInactive}>
-                        {user.status || 'Active'}
-                      </span>
-                    </td>
-                    <td className={`${u.tableCell} text-center`}>
-                      <div className="flex items-center justify-center gap-3">
-                        <button onClick={(e) => { e.stopPropagation(); setViewUser(user); }} className="text-gray-400 hover:text-green-600" title="View"><Eye size={18} /></button>
-                        <button onClick={(e) => openEditModal(user, e)} className="text-blue-500 hover:text-blue-700" title="Edit"><Edit size={18} /></button>
-                        <button onClick={(e) => handleDeleteUser(user.user_id, e)} className="text-red-500 hover:text-red-700" title="Delete"><Trash2 size={18} /></button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                {filteredUsers.length === 0 ? (
+                   <tr>
+                     <td colSpan="7" className="text-center py-10 text-gray-400 font-medium">
+                        No users found matching your filters.
+                     </td>
+                   </tr>
+                ) : (
+                  filteredUsers.map((user) => (
+                    <tr 
+                      key={user.user_id} 
+                      className={`${u.tableRow} cursor-pointer hover:bg-green-50/50 transition-colors`}
+                      onClick={() => setViewUser(user)} 
+                    >
+                      <td className={`${u.tableCell} font-medium`}>#{user.user_id}</td>
+                      <td className={`${u.tableCell} font-bold text-gray-800`}>{user.first_name} {user.last_name}</td>
+                      <td className={u.tableCell}>{user.contact_number}</td>
+                      <td className={u.tableCell}>{user.email}</td>
+                      <td className={u.tableCell}>
+                        <span className={user.role === 'Admin' ? u.badgeAdmin : user.role === 'Collector' ? u.badgeCollector : user.role === 'Driver' ? u.badgeDriver : u.badgeCitizen}>
+                          {user.role}
+                        </span>
+                      </td>
+                      <td className={u.tableCell}>
+                        <span className={user.status === 'Active' ? u.statusActive : u.statusInactive}>
+                          {user.status || 'Active'}
+                        </span>
+                      </td>
+                      <td className={`${u.tableCell} text-center`}>
+                        <div className="flex items-center justify-center gap-3">
+                          <button onClick={(e) => { e.stopPropagation(); setViewUser(user); }} className="text-gray-400 hover:text-green-600" title="View"><Eye size={18} /></button>
+                          <button onClick={(e) => openEditModal(user, e)} className="text-blue-500 hover:text-blue-700" title="Edit"><Edit size={18} /></button>
+                          {/* ✅ REPLACED DELETE ICON WITH ARCHIVE ICON */}
+                          <button onClick={(e) => triggerArchive(user.user_id, e)} className="text-red-500 hover:text-red-700" title="Archive"><Archive size={18} /></button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
         </div>
       </main>
 
-      <Notification 
-        key={notify.msg} show={notify.show} message={notify.msg} type={notify.type} 
-        onClose={() => setNotify({ ...notify, show: false })} 
-      />
-
       <AddUserModal 
         isOpen={isModalOpen} 
         onClose={closeModal} 
         onAddUser={handleSaveUser} 
         editData={selectedUser} 
+        isProcessing={isProcessing} 
       />
 
-      {/* RENDER THE UPDATED VIEW MODAL */}
       <ViewUserModal 
         user={viewUser} 
         onClose={() => setViewUser(null)} 
       />
+
+      {/* ✅ ADDED CONFIRM DIALOG FOR ARCHIVING */}
+      <ConfirmDialog 
+        isOpen={isConfirmOpen}
+        onClose={() => setIsConfirmOpen(false)}
+        onConfirm={handleConfirmArchive}
+        title="Archive User Account?"
+        message="This user will be removed from the active list and their system access will be suspended. You can review and restore them later in the Archive Center."
+        confirmText="Archive Now"
+        type="warning"
+      />
+
+      <div className="relative z-[9999]">
+        <Notification 
+          key={notify.msg} show={notify.show} message={notify.msg} type={notify.type} 
+          onClose={() => setNotify({ ...notify, show: false })} 
+        />
+      </div>
+
     </div>
   );
 };
 
-/* VIEW ONLY MODAL COMPONENT (UPDATED WITH GENDER, ADDRESS, BIRTHDATE) */
+/* VIEW ONLY MODAL COMPONENT */
 const ViewUserModal = ({ user, onClose }) => {
   if (!user) return null;
 
@@ -272,7 +402,7 @@ const ViewUserModal = ({ user, onClose }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-2000 flex items-center justify-center bg-slate-900/60 backdrop-blur-[1px] p-4">
+    <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-slate-900/60 backdrop-blur-[1px] p-4">
       <div className="bg-white rounded-3xl w-full max-w-3xl overflow-hidden shadow-2xl flex flex-col md:flex-row border border-white/20">
         
         {/* SIDEBAR */}

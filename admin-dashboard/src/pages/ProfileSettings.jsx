@@ -23,76 +23,83 @@ const ProfileSettings = () => {
 
   const { layout: l, userManagement: u } = design;
 
-  // Helper to format date safely without timezone shifting
   // ✅ Helper to format date safely without timezone shifting
-const formatDateForInput = (dateString) => {
-  if (!dateString) return '';
-  // This creates a date object and extracts only the YYYY-MM-DD part based on local date
-  const date = new Date(dateString);
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
-
-useEffect(() => {
-  const init = async () => {
-    const userData = await authService.verifyToken();
-    if (!userData) { navigate("/login"); return; }
-    
-    setAdminUser(userData);
-    setUser(userData); 
-    
-    setFormData({
-      gender: userData.gender || '',
-      // ✅ Use the safe formatter here
-      birthday: formatDateForInput(userData.birthday),
-      address: userData.address || ''
-    });
+  const formatDateForInput = (dateString) => {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   };
-  init();
-}, [navigate, setUser]);
 
-const handleUpdate = async (e) => {
-  e.preventDefault();
-  try {
-    // 1. Get the most current data from state
-    const updatePayload = {
-      ...adminUser,      // Spread existing user (ID, current pic, etc.)
-      ...formData,       // Spread the editable fields (gender, birthday, address)
-      // Ensure these are explicitly mapped to backend names
-      first_name: adminUser.first_name,
-      last_name: adminUser.last_name,
-      contact_number: adminUser.contact_number
-    };
-
-    const result = await userService.updateUser(adminUser.user_id, updatePayload);
-
-    if (result) {
-      // 2. Update the Context and Local Storage immediately
-      setUser(result); 
-      setAdminUser(result);
-      localStorage.setItem("userProfile", JSON.stringify(result));
+  useEffect(() => {
+    const init = async () => {
+      const userData = await authService.verifyToken();
+      if (!userData) { navigate("/login"); return; }
       
-      setNotify({ show: true, msg: "Profile synced across roles!", type: 'success' });
-    }
-  } catch (err) {
-    setNotify({ show: true, msg: "Save failed", type: 'error' });
-  }
-};
+      setAdminUser(userData);
+      setUser(userData); 
+      
+      setFormData({
+        gender: userData.gender || '',
+        birthday: formatDateForInput(userData.birthday),
+        address: userData.address || ''
+      });
+    };
+    init();
+  }, [navigate, setUser]);
 
-const handlePhotoChange = async (e) => {
+  const handleUpdate = async (e) => {
+    e.preventDefault();
+    try {
+      // ✅ 1. ADDED PROFILE PICTURE TO THE PAYLOAD
+      const updatePayload = {
+        firstName: adminUser.first_name,
+        lastName: adminUser.last_name,
+        email: adminUser.email,
+        phone: adminUser.contact_number || adminUser.phone,
+        role: adminUser.role, 
+        status: adminUser.status,
+        gender: formData.gender,
+        birthday: formData.birthday,
+        address: formData.address,
+        profile_picture: adminUser.profile_picture // <-- CRITICAL: Prevents photo from being deleted
+      };
+
+      const result = await userService.updateUser(adminUser.user_id, updatePayload);
+
+      if (result) {
+        // ✅ 2. Safely merge, ensuring the profile picture and role survive
+        const safeUpdatedUser = { 
+          ...adminUser, 
+          ...result, 
+          role: adminUser.role,
+          profile_picture: result.profile_picture || adminUser.profile_picture 
+        };
+
+        setUser(safeUpdatedUser); 
+        setAdminUser(safeUpdatedUser);
+        localStorage.setItem("userProfile", JSON.stringify(safeUpdatedUser));
+        
+        setNotify({ show: true, msg: "Profile updated successfully!", type: 'success' });
+      }
+    } catch (err) {
+      setNotify({ show: true, msg: "Save failed. Please try again.", type: 'error' });
+    }
+  };
+
+  const handlePhotoChange = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
-    // Optional: Check file size (e.g., limit to 2MB)
     if (file.size > 2 * 1024 * 1024) {
         setNotify({ show: true, msg: "File too large (Max 2MB)", type: 'error' });
         return;
     }
 
     const uploadData = new FormData();
-    uploadData.append('profile_image', file); // This key MUST match upload.single('profile_image')
+    uploadData.append('profile_image', file); 
 
     try {
         const res = await userService.uploadAvatar(uploadData);
@@ -111,7 +118,7 @@ const handlePhotoChange = async (e) => {
         console.error("Upload Error:", err);
         setNotify({ show: true, msg: err.message || "Upload failed", type: 'error' });
     }
-};
+  };
 
   return (
     <div className="h-full bg-[#f0fdf4] overflow-y-auto relative font-sans">
@@ -148,6 +155,7 @@ const handlePhotoChange = async (e) => {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mt-8 pb-10">
+          {/* LEFT SIDEBAR INFO */}
           <div className="space-y-6">
             <div className="bg-white p-8 rounded-2xl shadow-sm border border-gray-100 flex flex-col items-center" style={{ borderTop: '5px solid #2B9447' }}>
               <div className="relative group">
@@ -181,6 +189,7 @@ const handlePhotoChange = async (e) => {
             </div>
           </div>
 
+          {/* RIGHT EDIT FORM */}
           <div className="lg:col-span-2 bg-white p-8 rounded-2xl shadow-sm border border-gray-100" style={{ borderTop: '5px solid #2B9447' }}>
             <form onSubmit={handleUpdate} className="space-y-8">
               <div className="space-y-4">
@@ -215,7 +224,7 @@ const handlePhotoChange = async (e) => {
                   <textarea rows="3" value={formData.address} onChange={(e) => setFormData({...formData, address: e.target.value})} placeholder="Full address..." className="w-full bg-gray-50 border border-gray-100 p-3.5 rounded-xl font-bold text-gray-700 text-sm resize-none" />
                 </div>
               </div>
-              <button type="submit" className="bg-[#4CAF50] hover:bg-[#43A047] text-white px-8 py-3.5 rounded-xl text-sm font-bold w-full flex items-center justify-center gap-2 shadow-md">
+              <button type="submit" className="bg-[#4CAF50] hover:bg-[#43A047] text-white px-8 py-3.5 rounded-xl text-sm font-bold w-full flex items-center justify-center gap-2 shadow-md transition-colors">
                 <Save size={18} /> Update Profile
               </button>
             </form>
