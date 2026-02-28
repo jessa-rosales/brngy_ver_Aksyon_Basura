@@ -4,6 +4,7 @@ import LandingPage from './pages/LandingPage';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard'; 
 import CollectedBins from './pages/CollectedBins';
+import VehicleTracking from './pages/VehicleTracking';
 import CitizenReports from './pages/CitizenReports';
 import UserManagement from './pages/UserManagement'; 
 import ZoneManagement from './pages/ZoneManagement';
@@ -54,6 +55,10 @@ function App() {
           <Route path="/bins" element={
             <AdminRoute><CloseSidebar><CollectedBins /></CloseSidebar></AdminRoute>
           } />
+          
+          <Route path="/tracking" element={
+            <AdminRoute><CloseSidebar><VehicleTracking /></CloseSidebar></AdminRoute>
+          }/>
           
           
           <Route path="/reports" element={
