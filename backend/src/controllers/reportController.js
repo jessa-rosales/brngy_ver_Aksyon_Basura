@@ -99,8 +99,8 @@ const getAllReports = async (req, res) => {
 
 
 // 2. Get All Reports (For Feed)
-// 2. Get All Reports (For Feed and Admin)
-const getAllReports = async (req, res) => {
+// updated 3/1/26
+/*const getAllReports = async (req, res) => {
     const currentUserId = req.user ? req.user.id : null; 
 
     try {
@@ -120,6 +120,43 @@ const getAllReports = async (req, res) => {
             FROM citizen_reports r
             LEFT JOIN users u ON r.reporter_id = u.user_id -- ✅ THE JOIN LOGIC
             WHERE r.is_archived = false -- ✅ FILTER OUT ARCHIVED REPORTS
+            ORDER BY r.created_at DESC;
+        `;
+        
+        const result = await pool.query(query, [currentUserId]);
+        res.status(200).json({ success: true, reports: result.rows });
+    } catch (error) {
+        console.error("Fetch reports error:", error);
+        res.status(500).json({ success: false, message: 'Server Error' });
+    }
+};*/
+
+
+const getAllReports = async (req, res) => {
+    const currentUserId = req.user ? req.user.id : null; 
+
+    try {
+        const query = `
+            SELECT 
+                r.*,
+                ST_Y(r.location_coords::geometry) as latitude,
+                ST_X(r.location_coords::geometry) as longitude,
+                CONCAT(u.first_name, ' ', u.last_name) AS reporter_name,
+                u.profile_picture,
+                u.contact_number,
+                -- ✅ FIXED: Use NULLIF to ensure it returns actual NULL if no driver exists
+                NULLIF(TRIM(CONCAT(driver.first_name, ' ', driver.last_name)), '') AS assigned_driver_name,
+                (SELECT COUNT(*) FROM report_attention ra WHERE ra.report_id = r.report_id) AS attention_count,
+                CAST(EXISTS (
+                    SELECT 1 FROM report_attention 
+                    WHERE report_id = r.report_id AND user_id = $1
+                ) AS BOOLEAN) AS has_attended
+            FROM citizen_reports r
+            LEFT JOIN users u ON r.reporter_id = u.user_id
+            -- ✅ Join to get the Driver through the task_assignments table
+            LEFT JOIN task_assignments ta ON r.assigned_team_id = ta.task_id
+            LEFT JOIN users driver ON ta.driver_id = driver.user_id
+            WHERE r.is_archived = false
             ORDER BY r.created_at DESC;
         `;
         
@@ -195,6 +232,42 @@ const deleteReport = async (req, res) => {
         res.status(500).json({ success: false, message: "Server Error" });
     }
 };
+const assignTeam = async (req, res) => {
+    const { id } = req.params; // report_id
+    const { assigned_team_id } = req.body; // task_id from task_assignments
 
-// Ensure these are added to module.exports
-module.exports = { submitReport, getAllReports, toggleAttention, updateReportStatus, deleteReport };
+    try {
+        const query = `
+            UPDATE citizen_reports 
+            SET 
+                assigned_team_id = $1, 
+                status = 'In Progress' 
+            WHERE report_id = $2 
+            RETURNING *;
+        `;
+        const result = await pool.query(query, [assigned_team_id, id]);
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ success: false, message: "Report not found" });
+        }
+
+        res.status(200).json({ 
+            success: true, 
+            message: "Team assigned and report status updated to In Progress", 
+            report: result.rows[0] 
+        });
+    } catch (error) {
+        console.error("Assign Team Error:", error);
+        res.status(500).json({ success: false, message: "Server Error" });
+    }
+};
+
+// Update your module.exports at the bottom
+module.exports = { 
+    submitReport, 
+    getAllReports, 
+    toggleAttention, 
+    updateReportStatus, 
+    deleteReport,
+    assignTeam // ✅ Added this
+};
