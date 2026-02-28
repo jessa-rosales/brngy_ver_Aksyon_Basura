@@ -51,5 +51,27 @@ export const reportService = {
       },
     });
     return await response.json();
-  }
+  },
+
+  assignTeamToReport: async (reportId, taskId) => {
+    // 1. Get the token from localStorage (or wherever you save your JWT)
+    const token = localStorage.getItem('token'); 
+
+    try {
+      const response = await fetch(`http://localhost:5000/api/reports/${reportId}/assign`, {
+        method: 'PUT',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}` // ✅ REQUIRED for the 'authorize' middleware
+        },
+        body: JSON.stringify({ assigned_team_id: taskId }),
+      });
+      
+      return await response.json();
+    } catch (error) {
+      console.error("Assignment service error:", error);
+      return { success: false, error: "Connection failed" };
+    }
+  },
+
 };
