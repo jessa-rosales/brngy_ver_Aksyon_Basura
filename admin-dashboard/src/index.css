@@ -1,5 +1,5 @@
 @import "tailwindcss";
-
+@import 'mapbox-gl/dist/mapbox-gl.css';
 
 /* You can keep your custom body background here too */
 body {
