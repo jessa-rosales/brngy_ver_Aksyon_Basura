@@ -3,7 +3,7 @@ import {
   ArrowLeft, RotateCcw, Search, MessageSquare, 
   ClipboardList, Map, Megaphone, Users, Trash2,
   RefreshCw, Bell, ArrowUp, Truck, Clock, Calendar, 
-  MapPin, AlertTriangle, CheckCircle, Trash, LayoutGrid, List, User
+  MapPin, AlertTriangle, CheckCircle, Trash, LayoutGrid, List, User, RefreshCcw
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { design } from '../styles/design';
@@ -89,33 +89,51 @@ const ArchiveCenter = () => {
      SPECIFIC RENDERERS FOR EACH TAB (MATCHING ACTIVE PAGE LAYOUTS)
   ========================================================================= */
 
+  // ✅ PERFECTED ANNOUNCEMENTS RENDERER
   const renderAnnouncements = () => (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 pb-10">
       {filteredData.map((item) => (
-        <div key={item.announcement_id} className="bg-white rounded-xl shadow-sm overflow-hidden flex flex-col group border border-slate-200 opacity-80 hover:opacity-100 transition-opacity relative">
+        <div key={item.announcement_id} className="bg-white rounded-xl shadow-sm overflow-hidden flex flex-col group border border-gray-50 opacity-80 hover:opacity-100 transition-all relative">
           <div className="absolute inset-0 bg-slate-900/5 z-10 pointer-events-none" /> {/* Archive overlay tint */}
           <div className="aspect-video bg-gray-200 w-full relative overflow-hidden shrink-0">
             {item.ann_photo ? (
-              <img src={`http://localhost:5000${item.ann_photo}`} alt="ann" className="w-full h-full object-cover grayscale" />
+              <img src={`http://localhost:5000${item.ann_photo}`} alt="ann" className="w-full h-full object-cover transition-transform group-hover:scale-105 grayscale" />
             ) : (
               <div className="w-full h-full flex flex-col items-center justify-center text-gray-300 bg-gray-50">
                  <Megaphone size={40} className="mb-2 opacity-20" />
               </div>
             )}
-            <div className="absolute top-3 left-3 bg-rose-500 text-white text-[9px] font-black px-2 py-1 rounded shadow-sm uppercase">Archived</div>
+            <div className="absolute top-3 left-3 bg-rose-500 text-white text-[9px] font-black px-2 py-1 rounded shadow-sm uppercase z-20">Archived</div>
           </div>
           <div className="p-6 flex flex-col flex-1">
             <div className="flex justify-between items-center mb-4">
               <div className="flex gap-2">
-                <span className="px-3 py-1 bg-slate-100 text-slate-500 text-[10px] font-black rounded-full uppercase">{item.category}</span>
-                <span className="px-3 py-1 bg-slate-100 text-slate-500 text-[10px] font-black rounded-full uppercase">{item.priority}</span>
+                <span className="px-3 py-1 bg-blue-50 text-blue-600 text-[10px] font-black rounded-full uppercase">{item.category}</span>
+                <span className={`px-3 py-1 text-[10px] font-black rounded-full uppercase ${item.priority === 'Urgent' ? 'bg-red-50 text-red-600' : 'bg-orange-50 text-orange-600'}`}>{item.priority}</span>
               </div>
+              <span className={`text-[10px] font-bold px-2.5 py-1 rounded-lg uppercase ${item.status === 'Published' ? 'text-green-600 bg-green-50' : 'text-gray-500 bg-gray-100'}`}>{item.status}</span>
             </div>
-            <h3 className="text-xl font-bold text-gray-600 mb-2 line-clamp-1">{item.title}</h3>
-            <p className="text-gray-400 text-sm mb-6 line-clamp-2 leading-relaxed">{item.content}</p>
+            <h3 className="text-xl font-bold text-gray-800 mb-2 group-hover:text-green-700 transition-colors line-clamp-1">{item.title}</h3>
+            <p className="text-gray-500 text-sm mb-6 line-clamp-2 leading-relaxed">{item.content}</p>
             
-            <div className="mt-auto pt-4 border-t border-gray-50">
-              <button onClick={() => handleRestore(item.announcement_id)} className="w-full py-3 bg-emerald-100 hover:bg-emerald-600 text-emerald-700 hover:text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2">
+            <div className="mt-auto pt-4 border-t border-gray-50 space-y-2">
+              <div className="flex items-center text-gray-400 text-[11px] font-medium gap-4">
+                <div className="flex items-center gap-1.5"><Clock size={14} className="text-green-600" /> {item.date_published ? new Date(item.date_published).toLocaleDateString() : 'Unknown'}</div>
+                <div className="flex items-center gap-1.5"><User size={14} className="text-green-600" /> {item.author_first ? `${item.author_first} ${item.author_last}` : "Admin Officer"}</div>
+              </div>
+
+              {item.date_updated && (
+                <div className="flex items-center gap-2 text-[10px] text-orange-600 font-bold bg-orange-50/40 p-2 rounded-lg mt-2">
+                  <RefreshCcw size={12} className="animate-spin-slow" />
+                  {item.author_id !== item.last_edited_by ? (
+                    <span>Edited by {item.editor_first || 'Unknown'} • {new Date(item.date_updated).toLocaleString()}</span>
+                  ) : (
+                    <span>Updated {new Date(item.date_updated).toLocaleString()}</span>
+                  )}
+                </div>
+              )}
+
+              <button onClick={() => handleRestore(item.announcement_id)} className="w-full mt-4 py-3 bg-emerald-100 hover:bg-emerald-600 text-emerald-700 hover:text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 shadow-sm">
                 <RotateCcw size={14} /> Restore Announcement
               </button>
             </div>
@@ -296,7 +314,6 @@ const ArchiveCenter = () => {
     </div>
   );
 
-  // ✅ PERFECTED ZONES RENDERER
   const renderZones = () => (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
       {filteredData.map((zone) => (
@@ -330,7 +347,6 @@ const ArchiveCenter = () => {
     </div>
   );
 
-  // ✅ PERFECTED BINS RENDERER
   const renderBins = () => (
     <div className="flex flex-col gap-4">
       {/* Bin View Toggle (Only visible on Bins tab) */}
@@ -392,7 +408,6 @@ const ArchiveCenter = () => {
                     </div>
                   </div>
                   
-                  {/* ✅ Re-added Collector Display */}
                   <div className="flex items-start gap-3">
                     <div className="mt-0.5 bg-slate-50 p-1.5 rounded-lg text-slate-400 shrink-0">
                       <User size={16} />
@@ -433,7 +448,7 @@ const ArchiveCenter = () => {
                   <th scope="col" className="px-6 py-5 tracking-wider w-24">Photo</th>
                   <th scope="col" className="px-6 py-5 tracking-wider">Bin Details</th>
                   <th scope="col" className="px-6 py-5 tracking-wider">Location</th>
-                  <th scope="col" className="px-6 py-5 tracking-wider">Collector</th> {/* ✅ Re-added Collector */}
+                  <th scope="col" className="px-6 py-5 tracking-wider">Collector</th> 
                   <th scope="col" className="px-6 py-5 tracking-wider">Time</th>
                   <th scope="col" className="px-6 py-5 tracking-wider text-right">Action</th>
                 </tr>
