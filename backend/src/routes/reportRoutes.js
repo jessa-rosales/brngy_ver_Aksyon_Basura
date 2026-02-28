@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { submitReport, getAllReports, toggleAttention, updateReportStatus, deleteReport } = require('../controllers/reportController');
+const { submitReport, getAllReports, toggleAttention, updateReportStatus, deleteReport, assignTeam } = require('../controllers/reportController');
 const reportUpload = require('../middleware/reportUpload'); 
 const authorize = require('../middleware/auth'); // Ensure this middleware is imported
 
@@ -15,6 +15,7 @@ router.post('/toggle-attention', authorize, toggleAttention);
 
 // Update existing reportRoutes.js
 router.put('/:id/status', authorize, updateReportStatus);
+router.put('/:id/assign', authorize, assignTeam);
 router.delete('/:id', authorize, deleteReport);
 
 module.exports = router;
