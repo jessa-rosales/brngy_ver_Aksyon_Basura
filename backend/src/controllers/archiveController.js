@@ -41,13 +41,17 @@ const archiveController = {
           query = "SELECT * FROM zones WHERE is_archived = true ORDER BY zone_id DESC";
           break;
         case "announcements":
-        query = `
-            SELECT a.*, u.first_name as author_first, u.last_name as author_last 
-            FROM announcements a 
-            LEFT JOIN users u ON a.author_id = u.user_id 
-            WHERE a.is_archived = true 
-            ORDER BY date_published DESC
-        `;
+          query = `
+            SELECT a.*, 
+                   u1.first_name as author_first, u1.last_name as author_last,
+                   u2.first_name as editor_first, u2.last_name as editor_last
+            FROM announcements a
+            LEFT JOIN users u1 ON a.author_id = u1.user_id
+            LEFT JOIN users u2 ON a.last_edited_by = u2.user_id
+            WHERE a.is_archived = true
+            ORDER BY a.date_published DESC
+          `;
+          break;
         break;
         case "users":
           query = "SELECT * FROM users WHERE is_archived = true ORDER BY user_id DESC";
