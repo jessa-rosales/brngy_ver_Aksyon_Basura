@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { 
   Search, Trash2, X, ChevronDown, Clock, Calendar as CalendarIcon,
   AlertTriangle, MapPin, Info, FileText, Eye, Flag, CheckCircle, Navigation,
-  Archive // ✅ Added Archive Icon
+  Archive 
 } from 'lucide-react'; 
 import { design } from '../styles/design'; 
 
@@ -11,12 +11,14 @@ import { design } from '../styles/design';
 import { useUser } from '../context/UserContext';
 import { reportService } from '../services/reportService'; 
 import { zoneService } from '../services/zoneService'; 
+import { assignmentService } from '../services/assignmentService'; // ✅ Added Assignment Service
 
 // COMPONENTS
 import ReportDetailsModal from '../components/ReportDetailsModal';
 import ReportNavigationModal from '../components/ReportNavigationModal';
-import ConfirmDialog from '../components/ConfirmDialog'; // ✅ Added ConfirmDialog
-import Notification from '../components/Notification'; // ✅ Added Notification for consistent UX
+import ConfirmDialog from '../components/ConfirmDialog'; 
+import Notification from '../components/Notification'; 
+import TeamSelectionModal from '../components/TeamSelectionModal'; // ✅ Added Team Selection Modal
 
 const CitizenReports = () => {
   const navigate = useNavigate();
@@ -27,41 +29,36 @@ const CitizenReports = () => {
   // STATE MANAGEMENT
   const [reports, setReports] = useState([]);
   const [zones, setZones] = useState([]); 
+  const [teams, setTeams] = useState([]); // ✅ Added Teams State
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('All Types');
   const [statusFilter, setStatusFilter] = useState('All Status');
   const [selectedDate, setSelectedDate] = useState('');
-  const [notify, setNotify] = useState({ show: false, msg: '', type: 'success' }); // ✅ Added Notification State
+  const [notify, setNotify] = useState({ show: false, msg: '', type: 'success' }); 
   
   // MODAL & UI STATES
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
+  const [isTeamModalOpen, setIsTeamModalOpen] = useState(false); // ✅ Added Team Modal State
   const [selectedReport, setSelectedReport] = useState(null);
   const [activeFilter, setActiveFilter] = useState(null); 
   const [isNavModalOpen, setIsNavModalOpen] = useState(false);
   const [activeZone, setActiveZone] = useState(null);
 
-  // ✅ NEW ARCHIVE STATES
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [itemToArchive, setItemToArchive] = useState(null);
 
-  // ✅ ROBUST HELPER: Point in Polygon Logic
   const isPointInPolygon = (lat, lng, polygon) => {
     if (!polygon) return false;
     const x = Number(lat);
     const y = Number(lng);
     let inside = false;
-    
-    const coords = Array.isArray(polygon[0][0]) || typeof polygon[0][0] === 'object' 
-      ? polygon[0] 
-      : polygon;
-    
+    const coords = Array.isArray(polygon[0][0]) || typeof polygon[0][0] === 'object' ? polygon[0] : polygon;
     for (let i = 0, j = coords.length - 1; i < coords.length; j = i++) {
       const xi = Number(coords[i].lat ?? coords[i][0]);
       const yi = Number(coords[i].lng ?? coords[i][1]);
       const xj = Number(coords[j].lat ?? coords[j][0]);
       const yj = Number(coords[j].lng ?? coords[j][1]);
-
       const intersect = ((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
       if (intersect) inside = !inside;
     }
@@ -71,12 +68,14 @@ const CitizenReports = () => {
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
-      const [reportRes, zoneRes] = await Promise.all([
+      const [reportRes, zoneRes, teamRes] = await Promise.all([
         reportService.getAllReports(),
-        zoneService.getZones()
+        zoneService.getZones(),
+        assignmentService.getAssignments() // ✅ Fetching Teams
       ]);
       if (reportRes.success) setReports(reportRes.reports);
       if (zoneRes) setZones(zoneRes);
+      if (Array.isArray(teamRes)) setTeams(teamRes); // ✅ Setting Teams
     } catch (error) {
       console.error("Error fetching data:", error);
     } finally {
@@ -150,13 +149,39 @@ const CitizenReports = () => {
     }
   };
 
-  // ✅ UPDATED ARCHIVE LOGIC (Trigger Modal)
+  // ✅ HANDLER FOR TEAM ASSIGNMENT TRIGGER
+  const handleOpenTeamSelection = (report) => {
+    setSelectedReport(report);
+    setIsDetailsOpen(false); // Close details to show selection
+    setIsTeamModalOpen(true);
+  };
+
+  // ✅ HANDLER FOR CONFIRMING THE TEAM
+  const handleConfirmTeamSelection = async (team) => {
+  try {
+    // Call the new service method that hits your database
+    const result = await reportService.assignTeamToReport(
+      selectedReport.report_id, 
+      team.task_id
+    );
+
+    if (result.success) {
+      triggerNotify(`Assigned to ${team.first_name}'s team. Status: In Progress`, "success");
+      setIsTeamModalOpen(false);
+      loadData(); // Refresh list to show the new status
+    } else {
+      triggerNotify(result.error || "Failed to save assignment", "error");
+    }
+  } catch (error) {
+    triggerNotify("Server connection error", "error");
+  }
+};
+
   const triggerArchive = (id) => {
     setItemToArchive(id);
     setIsConfirmOpen(true);
   };
 
-  // ✅ EXECUTING THE ARCHIVE (Soft Delete)
   const handleConfirmArchive = async () => {
     try {
       const result = await reportService.deleteReport(itemToArchive);
@@ -191,31 +216,20 @@ const CitizenReports = () => {
     { label: 'Resolved', icon: CheckCircle, color: 'text-green-600' },
   ];
 
-  // ✅ FIXED FILTER & SORT LOGIC
   const filteredReports = reports.filter(item => {
     const displayIssue = item.issue_type === 'Other' ? item.issue_type_other : item.issue_type;
-    
-    // Search logic
     const matchesSearch = !searchTerm || 
       displayIssue?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       item.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       item.reporter_name?.toLowerCase().includes(searchTerm.toLowerCase());
-
-    // Category logic - Handles 'Other Issue' specifically
     const matchesCategory = categoryFilter === 'All Types' || 
       (categoryFilter === 'Other Issue' ? item.issue_type === 'Other' : item.issue_type === categoryFilter);
-
-    // Status logic - Handles 'Need Attention' via attention_count
     const matchesStatus = statusFilter === 'All Status' || 
       (statusFilter === 'Need Attention' ? parseInt(item.attention_count) > 0 : item.status === statusFilter);
-
-    // Date logic - Accurate comparison using Canada locale for YYYY-MM-DD format
     const reportDate = new Date(item.created_at).toLocaleDateString('en-CA'); 
     const matchesDate = !selectedDate || reportDate === selectedDate;
-
     return matchesSearch && matchesCategory && matchesStatus && matchesDate;
   }).sort((a, b) => {
-    // If filtering by Need Attention, sort highest signals first
     if (statusFilter === 'Need Attention') {
       return (parseInt(b.attention_count) || 0) - (parseInt(a.attention_count) || 0);
     }
@@ -265,14 +279,11 @@ const CitizenReports = () => {
       </header>
 
       <main className="p-8 space-y-8 animate-in fade-in duration-700">
-        
-        {/* ✅ ADDED ARCHIVE BUTTON TO TITLE SECTION */}
         <div className="flex justify-between items-end">
           <div className={u.titleSection}>
             <h2 className="text-2xl font-bold text-[#1B5E20]">Citizen Reports</h2>
             <p className="text-gray-600 text-sm mt-1">Review community feedback from the mobile app</p>
           </div>
-          
           <button 
             onClick={() => navigate("/archive-center")}
             className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-400 hover:text-emerald-600 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-sm"
@@ -309,7 +320,6 @@ const CitizenReports = () => {
               )}
             </div>
 
-            {/* Category Filter */}
             <div className="relative min-w-[200px] w-full md:w-auto">
               <div onClick={(e) => { e.stopPropagation(); setActiveFilter(activeFilter === 'category' ? null : 'category'); }} className={`${u.filterSelect} flex items-center justify-between cursor-pointer bg-white`}>
                 <span className="flex items-center gap-2 truncate text-xs font-bold">{categoryFilter}</span>
@@ -326,7 +336,6 @@ const CitizenReports = () => {
               )}
             </div>
 
-            {/* Status Filter */}
             <div className="relative min-w-[200px] w-full md:w-auto">
               <div onClick={(e) => { e.stopPropagation(); setActiveFilter(activeFilter === 'status' ? null : 'status'); }} className={`${u.filterSelect} flex items-center justify-between cursor-pointer bg-white`}>
                 <span className="text-xs font-bold">{statusFilter}</span>
@@ -409,7 +418,6 @@ const CitizenReports = () => {
                         <button onClick={() => handleNavigateClick(item)} className="p-3 bg-emerald-50 text-emerald-600 rounded-xl hover:bg-emerald-600 hover:text-white transition-all border border-emerald-100" title="Navigate to location">
                           <Navigation size={16} />
                         </button>
-                        {/* ✅ REPLACED DELETE ICON WITH ARCHIVE ICON */}
                         <button onClick={() => triggerArchive(item.report_id)} className="p-3 bg-rose-50 text-rose-500 rounded-xl hover:bg-rose-500 hover:text-white transition-all border border-rose-100" title="Move to Archive">
                           <Archive size={16} />
                         </button>
@@ -443,14 +451,24 @@ const CitizenReports = () => {
           }} 
           report={selectedReport}
           zone={activeZone} 
-          onAssign={() => {}}
+          onAssign={() => handleOpenTeamSelection(selectedReport)} // ✅ Connected to Team Selection
           onResolve={() => handleResolve(selectedReport.report_id)}
-          // Pass the archive trigger to the details modal if needed
           onArchive={() => triggerArchive(selectedReport.report_id)} 
         />
       )}
 
-      {/* ✅ ADDED CONFIRM DIALOG FOR ARCHIVING */}
+      {/* ✅ Added Team Selection Modal */}
+      {/* Team Selection Modal */}
+      <TeamSelectionModal 
+        isOpen={isTeamModalOpen}
+        onClose={() => setIsTeamModalOpen(false)}
+        teams={teams}
+        report={selectedReport}
+        onSelect={handleConfirmTeamSelection}
+        allReports={reports} // ✅ PASSED NEW PROP
+        allZones={zones}     // ✅ PASSED NEW PROP
+      />
+
       <ConfirmDialog 
         isOpen={isConfirmOpen}
         onClose={() => setIsConfirmOpen(false)}
@@ -461,7 +479,6 @@ const CitizenReports = () => {
         type="warning"
       />
 
-      {/* ✅ ADDED NOTIFICATION FOR SUCCESS/ERROR ALERTS */}
       <Notification key={notify.msg} show={notify.show} message={notify.msg} type={notify.type} onClose={() => setNotify({ ...notify, show: false })} />
     </div>
   );
