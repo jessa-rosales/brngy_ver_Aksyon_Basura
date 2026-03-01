@@ -254,6 +254,80 @@ toggleAttention: async (reportId, userId) => {
     throw error;
   }
 },*/
+
+
+
+//FOR CITIZEN TASK SCREEN
+// 📸 Collector uploads photo for Citizen Report
+  uploadReportEvidence: async (reportId, photoUri) => {
+    try {
+      const token = await AsyncStorage.getItem('token');
+      const profileData = await AsyncStorage.getItem('userProfile');
+      const user = JSON.parse(profileData);
+
+      const formData = new FormData();
+      formData.append('collector_id', user.user_id);
+
+      const filename = photoUri.split('/').pop();
+      const match = /\.(\w+)$/.exec(filename);
+      const type = match ? `image/${match[1]}` : `image/jpeg`;
+
+      formData.append('photo', {
+        uri: photoUri,
+        name: filename,
+        type: type
+      });
+
+      const response = await fetch(`${API_URL}/reports/${reportId}/evidence`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/json',
+          // ⚠️ DO NOT set Content-Type here, let fetch handle the boundary for FormData
+        },
+        body: formData
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Server Error: ${errorText}`);
+      }
+      
+      return await response.json();
+    } catch (error) {
+      console.error("Upload Report Evidence Error:", error);
+      throw error;
+    }
+  },
+
+  // 🚚 Driver confirms resolution of Citizen Report
+  confirmReportResolution: async (reportId) => {
+    try {
+      const token = await AsyncStorage.getItem('token');
+      const profileData = await AsyncStorage.getItem('userProfile');
+      const user = JSON.parse(profileData);
+      
+      const response = await fetch(`${API_URL}/reports/${reportId}/confirm-resolution`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify({ driver_id: user.user_id })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Server Error: ${errorText}`);
+      }
+      return await response.json();
+    } catch (error) {
+      console.error("Confirm Report Resolution Error:", error);
+      throw error;
+    }
+  },
+  
   // Unified image URL handler
   getImageUrl: (path) => {
     if (!path) return null;
