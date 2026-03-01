@@ -259,6 +259,7 @@ toggleAttention: async (reportId, userId) => {
 
 //FOR CITIZEN TASK SCREEN
 // 📸 Collector uploads photo for Citizen Report
+  // 📸 Collector uploads photo for Citizen Report
   uploadReportEvidence: async (reportId, photoUri) => {
     try {
       const token = await AsyncStorage.getItem('token');
@@ -266,7 +267,10 @@ toggleAttention: async (reportId, userId) => {
       const user = JSON.parse(profileData);
 
       const formData = new FormData();
-      formData.append('collector_id', user.user_id);
+      
+      // ✅ FIXED: Safely fallback to user.id if user.user_id is undefined
+      const actualUserId = user.user_id || user.id; 
+      formData.append('collector_id', actualUserId);
 
       const filename = photoUri.split('/').pop();
       const match = /\.(\w+)$/.exec(filename);
@@ -283,7 +287,6 @@ toggleAttention: async (reportId, userId) => {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Accept': 'application/json',
-          // ⚠️ DO NOT set Content-Type here, let fetch handle the boundary for FormData
         },
         body: formData
       });
@@ -327,6 +330,52 @@ toggleAttention: async (reportId, userId) => {
       throw error;
     }
   },
+  
+  // Fetch live tracking data for the Citizen TrackScreen
+  // 🚚 Fetch live tracking data for the TrackScreen
+  getZoneTrackingData: async () => {
+    try {
+      const token = await AsyncStorage.getItem('token'); 
+      
+      const response = await fetch(`${API_URL}/mobile/tracking-routes`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`, 
+          'Accept': 'application/json',
+          'ngrok-skip-browser-warning': 'true'
+        }
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text(); 
+        console.error("SERVER REJECTED TRACKING ROUTES:", errorText);
+        throw new Error(`Failed to fetch tracking routes: ${errorText}`);
+      }
+      
+      return await response.json(); // Expected format: { success: true, data: [...] }
+    } catch (error) {
+      console.error("Tracking Route Error:", error);
+      return { success: false, data: [] }; // Fallback so the app doesn't crash
+    }
+  },
+
+  getUserReportHistory: async () => {
+    try {
+        const token = await AsyncStorage.getItem('token');
+        // We hit the specific 'mobile' route we created for the history
+        const response = await fetch(`${API_URL}/mobile/all-reports`, { 
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'ngrok-skip-browser-warning': 'true'
+            },
+        });
+        return await response.json();
+    } catch (error) {
+        console.error("Fetch User History Error:", error);
+        return { success: false, reports: [] };
+    }
+},
   
   // Unified image URL handler
   getImageUrl: (path) => {
