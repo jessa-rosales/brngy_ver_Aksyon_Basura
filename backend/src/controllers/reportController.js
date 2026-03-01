@@ -262,6 +262,58 @@ const assignTeam = async (req, res) => {
     }
 };
 
+// 📸 1. Collector uploads resolution evidence for a report
+const uploadReportEvidence = async (req, res) => {
+  const { id } = req.params; // report_id
+  const { collector_id } = req.body; // Passed from React Native FormData
+
+  try {
+    // ✅ UPDATED: Matches the folder from your Multer config!
+    const photoUrl = req.file ? `/uploads/collection_rec/${req.file.filename}` : null;
+
+    if (!photoUrl) {
+      return res.status(400).json({ success: false, message: 'No photo provided' });
+    }
+
+    const query = `
+      UPDATE citizen_reports 
+      SET resolved_photo_url = $1, 
+          photo_uploaded_by = $2
+      WHERE report_id = $3 
+      RETURNING *;
+    `;
+    const result = await pool.query(query, [photoUrl, collector_id, id]);
+
+    res.status(200).json({ success: true, report: result.rows[0] });
+  } catch (error) {
+    console.error('Upload Report Evidence Error:', error);
+    res.status(500).json({ success: false, message: 'Server Error' });
+  }
+};
+
+// 🚚 2. Driver confirms the report is completely resolved
+const confirmReportResolution = async (req, res) => {
+  const { id } = req.params; // report_id
+  const { driver_id } = req.body;
+
+  try {
+    const query = `
+      UPDATE citizen_reports 
+      SET status = 'Resolved', 
+          confirmed_by = $1,
+          resolved_at = CURRENT_TIMESTAMP
+      WHERE report_id = $2 
+      RETURNING *;
+    `;
+    const result = await pool.query(query, [driver_id, id]);
+
+    res.status(200).json({ success: true, report: result.rows[0] });
+  } catch (error) {
+    console.error('Confirm Report Resolution Error:', error);
+    res.status(500).json({ success: false, message: 'Server Error' });
+  }
+};
+
 // Update your module.exports at the bottom
 module.exports = { 
     submitReport, 
@@ -269,5 +321,7 @@ module.exports = {
     toggleAttention, 
     updateReportStatus, 
     deleteReport,
-    assignTeam // ✅ Added this
+    assignTeam, // ✅ Added this
+    uploadReportEvidence,
+    confirmReportResolution
 };
