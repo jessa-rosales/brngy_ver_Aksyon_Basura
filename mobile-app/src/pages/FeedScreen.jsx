@@ -40,7 +40,8 @@ const FeedScreen = () => {
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [activeFilter, setActiveFilter] = useState('All Reports');
+  // ✅ UPDATED: Set default tab to 'Pending'
+  const [activeFilter, setActiveFilter] = useState('Pending');
 
   const fetchReports = async () => {
     try {
@@ -126,10 +127,10 @@ const FeedScreen = () => {
     }
   };
 
-  const filteredReports = reports.filter(report => {
-    if (activeFilter === 'All Reports') return true;
-    return report.status === activeFilter;
-  });
+  // ✅ UPDATED: Filters by status and then sorts newest to oldest
+  const filteredReports = reports
+    .filter(report => report.status === activeFilter)
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
   const ReportCard = ({ item }) => {
     const fullName = item.reporter_name || "Citizen";
@@ -239,7 +240,8 @@ const FeedScreen = () => {
       <View style={[styles.headerSection, { paddingTop: Platform.OS === 'ios' ? insets.top : 15 }]}>
         <Text style={styles.headerTitle}>Community Feed</Text>
         <View style={styles.filterContainer}>
-          {['All Reports', 'Pending', 'In Progress'].map((tab) => (
+          {/* ✅ UPDATED: Exact tabs requested */}
+          {['Pending', 'In Progress', 'Resolved'].map((tab) => (
             <TouchableOpacity
               key={tab}
               onPress={() => setActiveFilter(tab)}

@@ -44,7 +44,6 @@ const RenderBinMarker = ({ status, isNext }) => (
   </View>
 );
 
-// ✅ UPDATED: Added isCompleted prop to turn the marker gray with a checkmark if resolved
 const RenderReportMarker = ({ isNext, showLabel, issueType, isCompleted }) => (
   <View style={{ alignItems: 'center' }}>
     {showLabel && !isCompleted && (
@@ -60,7 +59,7 @@ const RenderReportMarker = ({ isNext, showLabel, issueType, isCompleted }) => (
       <View style={[
         styles.reportCore, 
         isNext && styles.blueCore, 
-        isCompleted && styles.collectedCore // Apply gray styling if completed
+        isCompleted && styles.collectedCore 
       ]}>
         {isCompleted ? (
           <CheckCircle2 size={14} color="white" />
@@ -71,7 +70,7 @@ const RenderReportMarker = ({ isNext, showLabel, issueType, isCompleted }) => (
       <View style={[
         styles.reportTip, 
         isNext && styles.blueTip,
-        isCompleted && styles.collectedTip // Apply gray tip styling if completed
+        isCompleted && styles.collectedTip 
       ]} />
     </View>
   </View>
@@ -129,26 +128,29 @@ const DriverRouteScreen = ({ navigation, route }) => {
     return () => clearInterval(interval);
   }, []);
 
+  // ✅ FIXED: Navigation & Zoom logic
   useEffect(() => {
     if (route.params?.targetLocation) {
       const { lat, lng, reportId } = route.params.targetLocation;
       
       setFocusedReportId(reportId);
+      setIsTracking(false);
+      setViewMode('navigation');
 
-      if (viewMode !== 'navigation') {
-        setIsTracking(false);
-        setViewMode('navigation');
-      } 
-      else if (mapCameraRef.current) {
-        mapCameraRef.current.setCamera({
-          centerCoordinate: [lng, lat],
-          zoomLevel: 19,
-          animationDuration: 1500
-        });
-        navigation.setParams({ targetLocation: null });
-      }
+      // Add a slight delay to allow the map to render if switching from overview mode
+      setTimeout(() => {
+        if (mapCameraRef.current) {
+          mapCameraRef.current.setCamera({
+            centerCoordinate: [Number(lng), Number(lat)],
+            zoomLevel: 18.5,
+            animationDuration: 2000
+          });
+        }
+      }, 300);
+
+      navigation.setParams({ targetLocation: null });
     }
-  }, [route.params?.targetLocation, viewMode]);
+  }, [route.params?.targetLocation]); // removed viewMode dependency so it doesn't clash
 
   useEffect(() => {
     if (route.params?.evidenceSubmittedForBin) {
@@ -170,35 +172,17 @@ const DriverRouteScreen = ({ navigation, route }) => {
     }
   }, [route.params?.evidenceSubmittedForBin, activeZoneId, navigation]);
 
-  // 📍 Handle navigation requests from other screens (like CitizenTask)
   useEffect(() => {
-    if (route.params?.targetLocation) {
-      const { lat, lng, reportId } = route.params.targetLocation;
-      
-      // 1. Highlight this specific report marker
-      setFocusedReportId(reportId);
-
-      // 2. Switch to navigation mode immediately
-      setViewMode('navigation');
-      setIsTracking(false); // Stop following user GPS to focus on the target
-
-      // 3. Perform the zoom animation
-      // Wrap in a small timeout to ensure the MapView has switched modes/rendered
-      setTimeout(() => {
-        if (mapCameraRef.current) {
-          mapCameraRef.current.setCamera({
-            centerCoordinate: [Number(lng), Number(lat)], // Explicitly ensure numbers
-            zoomLevel: 18.5, // High zoom for precise location
-            animationDuration: 2000,
-            mode: 'flyTo' // Smooth aerial transition
-          });
-        }
-      }, 100);
-
-      // 4. 🔥 CRITICAL: Clear the params so it doesn't re-trigger on every render
-      navigation.setParams({ targetLocation: null });
+    if (route.params?.evidenceSubmittedForReport) {
+      const capturedReportId = route.params.evidenceSubmittedForReport;
+      setAssignedReports(prev => prev.map(r => 
+        r.report_id === capturedReportId 
+          ? { ...r, evidence_submitted: true } 
+          : r
+      ));
+      navigation.setParams({ evidenceSubmittedForReport: null });
     }
-  }, [route.params?.targetLocation]);
+  }, [route.params?.evidenceSubmittedForReport, navigation]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -219,6 +203,15 @@ const DriverRouteScreen = ({ navigation, route }) => {
         const now = new Date();
         const curTime = now.getHours() * 100 + now.getMinutes();
 
+        const isToday = (dateString) => {
+           if (!dateString) return false;
+           const itemDate = new Date(dateString);
+           const today = new Date();
+           return itemDate.getDate() === today.getDate() &&
+                  itemDate.getMonth() === today.getMonth() &&
+                  itemDate.getFullYear() === today.getFullYear();
+        };
+
         const formatted = assignments.map((a, zIdx) => {
           const boundaryData = typeof a.boundaries === 'string' ? JSON.parse(a.boundaries) : a.boundaries;
           let rawPoints = [];
@@ -238,13 +231,20 @@ const DriverRouteScreen = ({ navigation, route }) => {
             zone_id: safeZoneId,
             polygonCoords,
             isActiveNow: isNowActive(a.start_time, a.end_time),
-            bins: (a.bins || []).map((bin, bIdx) => ({ 
-              ...bin, 
-              bin_id: bin.bin_id || `temp-bin-${safeZoneId}-${bIdx}`,
-              lat: Number(bin.lat), 
-              lng: Number(bin.lng),
-              evidence_submitted: bin.evidence_submitted || false 
-            }))
+            bins: (a.bins || []).map((bin, bIdx) => {
+              const dynamicStatus = (bin.status === 'Collected' && isToday(bin.last_collected_timestamp)) 
+                  ? 'Collected' 
+                  : 'Pending';
+
+              return { 
+                ...bin, 
+                bin_id: bin.bin_id || `temp-bin-${safeZoneId}-${bIdx}`,
+                lat: Number(bin.lat), 
+                lng: Number(bin.lng),
+                status: dynamicStatus, 
+                evidence_submitted: bin.evidence_submitted || false 
+              };
+            })
           };
         });
 
@@ -321,6 +321,7 @@ const DriverRouteScreen = ({ navigation, route }) => {
   }, [activeZoneId, assignedZones]);
 
   useEffect(() => {
+    // Only zoom to bounds if there's no target location being navigated to
     if (viewMode === 'navigation' && cameraBounds && mapCameraRef.current && !route.params?.targetLocation) {
       mapCameraRef.current.setCamera({
         bounds: {
@@ -440,24 +441,48 @@ const DriverRouteScreen = ({ navigation, route }) => {
   };
 
   const handleAction = async () => { 
-    if (!nearestStop) return;
+    if (!nearestStop || !userData) return;
 
     try {
       if (nearestStop.stopType === 'report') {
         await mobileService.confirmReportResolution(nearestStop.targetId);
         await loadAssignedData(); 
       } else {
-        await driverService.confirmCollection(nearestStop.targetId);
-        const updatedZones = assignedZones.map(zone => {
-          if (zone.zone_id === activeZoneId) {
-            return {
-              ...zone,
-              bins: zone.bins.map(b => b.bin_id === nearestStop.targetId ? { ...b, status: 'Collected' } : b)
-            };
-          }
-          return zone;
+        const token = await AsyncStorage.getItem('token');
+        
+        const dummyUrl = mobileService.getImageUrl('/dummy');
+        const baseUrl = dummyUrl.replace('/dummy', '/api');
+        
+        const response = await fetch(`${baseUrl}/mobile/confirm-collection`, {
+          method: 'PUT',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ 
+            bin_id: nearestStop.targetId,
+            // ✅ FIXED: Safely grab the correct user ID just like we did in the Camera Screen
+            driver_id: userData.user_id || userData.id 
+          })
         });
-        setAssignedZones(updatedZones);
+
+        const result = await response.json();
+
+        if (result.success) {
+          const updatedZones = assignedZones.map(zone => {
+            if (zone.zone_id === activeZoneId) {
+              return {
+                ...zone,
+                bins: zone.bins.map(b => b.bin_id === nearestStop.targetId ? { ...b, status: 'Collected' } : b)
+              };
+            }
+            return zone;
+          });
+          setAssignedZones(updatedZones);
+          Alert.alert("Success", "Collection confirmed and recorded.");
+        } else {
+          Alert.alert("Error", result.error || "Failed to confirm collection.");
+        }
       }
     } catch (error) {
       console.error("Action Error:", error);
@@ -553,7 +578,6 @@ const DriverRouteScreen = ({ navigation, route }) => {
           const isFocused = focusedReportId === report.report_id;
           const displayIssue = report.issue_type === 'Other' ? report.issue_type_other : report.issue_type;
           
-          // ✅ Pass the resolved status to the marker so it knows when to turn gray
           const isCompleted = report.status === 'Resolved';
 
           return (
