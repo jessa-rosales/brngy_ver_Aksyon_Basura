@@ -3,26 +3,24 @@ import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, Dimensions, 
   StatusBar, ActivityIndicator, Platform, RefreshControl, Image, Alert 
 } from 'react-native';
-// ✅ Mapbox SDK Imports
 import MapboxGL from '@rnmapbox/maps';
 import { 
   Navigation, CheckCircle2, Trash2, ArrowRight, Maximize2, 
-  Clock, Truck, ChevronRight, Layers, Map as MapIcon, AlertTriangle, LocateFixed, Target 
+  Clock, Truck, ChevronRight, Layers, Map as MapIcon, AlertTriangle, LocateFixed, Target, Camera 
 } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets, SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { driverService } from '../services/driverService';
+import { mobileService } from '../services/mobileService'; 
 
-// ✅ Initialize Mapbox
 MapboxGL.setAccessToken('pk.eyJ1IjoiamVnby1ybyIsImEiOiJjbWx6dnZ6YmQwOW12NGtxd25vMmJldGZhIn0.uCCN-70t1ZZugt6h1ZoMOg');
 
 const { width } = Dimensions.get('window');
-const INITIAL_COORDINATES = [124.6459, 8.4772]; // [lng, lat]
+const INITIAL_COORDINATES = [124.6459, 8.4772];
 
-// 🧮 1. Haversine Formula: Calculates distance between two GPS coordinates locally (Zero API Cost)
 const getDistance = (lat1, lon1, lat2, lon2) => {
-  const R = 6371; // Earth's radius in km
+  const R = 6371; 
   const dLat = (lat2 - lat1) * (Math.PI / 180);
   const dLon = (lon2 - lon1) * (Math.PI / 180);
   const a = 
@@ -32,7 +30,6 @@ const getDistance = (lat1, lon1, lat2, lon2) => {
   return R * c; 
 };
 
-// 📍 2. Extracted outside the main component to prevent ViewTagResolver crashes
 const RenderBinMarker = ({ status, isNext }) => (
   <View style={styles.emeraldMarkerContainer}>
     <View style={[styles.emeraldPulse, isNext && styles.bluePulse]} />
@@ -47,24 +44,57 @@ const RenderBinMarker = ({ status, isNext }) => (
   </View>
 );
 
+// ✅ UPDATED: Added isCompleted prop to turn the marker gray with a checkmark if resolved
+const RenderReportMarker = ({ isNext, showLabel, issueType, isCompleted }) => (
+  <View style={{ alignItems: 'center' }}>
+    {showLabel && !isCompleted && (
+      <View style={{ alignItems: 'center', paddingBottom: 2 }}>
+        <View style={styles.calloutBubble}>
+          <Text style={styles.calloutText}>{issueType}</Text>
+        </View>
+        <View style={styles.calloutTriangle} />
+      </View>
+    )}
+    <View style={styles.reportMarkerContainer}>
+      <View style={[styles.reportPulse, isNext && styles.bluePulse]} />
+      <View style={[
+        styles.reportCore, 
+        isNext && styles.blueCore, 
+        isCompleted && styles.collectedCore // Apply gray styling if completed
+      ]}>
+        {isCompleted ? (
+          <CheckCircle2 size={14} color="white" />
+        ) : (
+          <AlertTriangle size={14} color="white" />
+        )}
+      </View>
+      <View style={[
+        styles.reportTip, 
+        isNext && styles.blueTip,
+        isCompleted && styles.collectedTip // Apply gray tip styling if completed
+      ]} />
+    </View>
+  </View>
+);
+
 const DriverRouteScreen = ({ navigation, route }) => {
   const insets = useSafeAreaInsets();
   
-  // Role Detection
   const userRole = route.params?.role || 'driver';
   const isDriver = userRole === 'driver';
 
   const [viewMode, setViewMode] = useState('overview'); 
   const [userData, setUserData] = useState(null);
   const [assignedZones, setAssignedZones] = useState([]); 
+  const [assignedReports, setAssignedReports] = useState([]); 
   const [activeZoneId, setActiveZoneId] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false); 
   const [mapType, setMapType] = useState('standard'); 
   
-  // Tracking States
   const [userLoc, setUserLoc] = useState(null);
   const [isTracking, setIsTracking] = useState(true);
+  const [focusedReportId, setFocusedReportId] = useState(null);
   const mapCameraRef = useRef(null); 
 
   const getGreeting = () => {
@@ -95,17 +125,34 @@ const DriverRouteScreen = ({ navigation, route }) => {
     requestPermissions();
 
     loadAssignedData();
-    // 🔥 UPDATED: Fast sync for Collector to see Truck movement
     const interval = setInterval(loadAssignedData, 10000); 
     return () => clearInterval(interval);
   }, []);
 
-  // 📍 NEW: Listen for successful photo capture from the Camera Screen
+  useEffect(() => {
+    if (route.params?.targetLocation) {
+      const { lat, lng, reportId } = route.params.targetLocation;
+      
+      setFocusedReportId(reportId);
+
+      if (viewMode !== 'navigation') {
+        setIsTracking(false);
+        setViewMode('navigation');
+      } 
+      else if (mapCameraRef.current) {
+        mapCameraRef.current.setCamera({
+          centerCoordinate: [lng, lat],
+          zoomLevel: 19,
+          animationDuration: 1500
+        });
+        navigation.setParams({ targetLocation: null });
+      }
+    }
+  }, [route.params?.targetLocation, viewMode]);
+
   useEffect(() => {
     if (route.params?.evidenceSubmittedForBin) {
       const capturedBinId = route.params.evidenceSubmittedForBin;
-      
-      // Update local state to mark this bin's evidence as submitted
       setAssignedZones(prevZones => prevZones.map(zone => {
         if (zone.zone_id === activeZoneId) {
           return {
@@ -119,11 +166,39 @@ const DriverRouteScreen = ({ navigation, route }) => {
         }
         return zone;
       }));
-      
-      // Clear the param so it doesn't re-trigger
       navigation.setParams({ evidenceSubmittedForBin: null });
     }
   }, [route.params?.evidenceSubmittedForBin, activeZoneId, navigation]);
+
+  // 📍 Handle navigation requests from other screens (like CitizenTask)
+  useEffect(() => {
+    if (route.params?.targetLocation) {
+      const { lat, lng, reportId } = route.params.targetLocation;
+      
+      // 1. Highlight this specific report marker
+      setFocusedReportId(reportId);
+
+      // 2. Switch to navigation mode immediately
+      setViewMode('navigation');
+      setIsTracking(false); // Stop following user GPS to focus on the target
+
+      // 3. Perform the zoom animation
+      // Wrap in a small timeout to ensure the MapView has switched modes/rendered
+      setTimeout(() => {
+        if (mapCameraRef.current) {
+          mapCameraRef.current.setCamera({
+            centerCoordinate: [Number(lng), Number(lat)], // Explicitly ensure numbers
+            zoomLevel: 18.5, // High zoom for precise location
+            animationDuration: 2000,
+            mode: 'flyTo' // Smooth aerial transition
+          });
+        }
+      }, 100);
+
+      // 4. 🔥 CRITICAL: Clear the params so it doesn't re-trigger on every render
+      navigation.setParams({ targetLocation: null });
+    }
+  }, [route.params?.targetLocation]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -156,7 +231,6 @@ const DriverRouteScreen = ({ navigation, route }) => {
             return [lng, lat];
           });
 
-          // Provide robust fallback IDs in case the API returns nulls
           const safeZoneId = a.zone_id || `temp-zone-${zIdx}`;
 
           return {
@@ -169,7 +243,6 @@ const DriverRouteScreen = ({ navigation, route }) => {
               bin_id: bin.bin_id || `temp-bin-${safeZoneId}-${bIdx}`,
               lat: Number(bin.lat), 
               lng: Number(bin.lng),
-              // Ensure we track evidence status locally
               evidence_submitted: bin.evidence_submitted || false 
             }))
           };
@@ -185,6 +258,41 @@ const DriverRouteScreen = ({ navigation, route }) => {
             .filter(z => timeToInt(z.start_time) > curTime)
             .sort((a, b) => timeToInt(a.start_time) - timeToInt(b.start_time))[0];
           setActiveZoneId(next ? next.zone_id : (formatted[0]?.zone_id || null));
+        }
+
+        try {
+          const reportsRes = await mobileService.getAllReports();
+          if (reportsRes && reportsRes.success) {
+            const taskIds = assignments.map(a => String(a.task_id));
+            
+            const myActiveReports = reportsRes.reports.filter(r => {
+              if (!r.assigned_team_id || !taskIds.includes(String(r.assigned_team_id))) {
+                return false;
+              }
+              if (r.status === 'Pending') {
+                return false;
+              }
+              if (r.status === 'In Progress') {
+                return true;
+              }
+              if (r.status === 'Resolved') {
+                if (r.resolved_at) {
+                  const resolvedTime = new Date(r.resolved_at).getTime();
+                  const currentTime = new Date().getTime();
+                  const hoursDifference = (currentTime - resolvedTime) / (1000 * 60 * 60);
+                  
+                  return hoursDifference <= 3; 
+                }
+                return true; 
+              }
+              
+              return false;
+            });
+            
+            setAssignedReports(myActiveReports);
+          }
+        } catch (reportErr) {
+          console.log("Failed to load reports for map:", reportErr);
         }
       }
     } catch (e) { 
@@ -212,22 +320,16 @@ const DriverRouteScreen = ({ navigation, route }) => {
     return null;
   }, [activeZoneId, assignedZones]);
 
-  // 📍 NEW: Programmatically zoom to the zone when entering Navigation Mode
   useEffect(() => {
-    if (viewMode === 'navigation' && cameraBounds && mapCameraRef.current) {
+    if (viewMode === 'navigation' && cameraBounds && mapCameraRef.current && !route.params?.targetLocation) {
       mapCameraRef.current.setCamera({
         bounds: {
-          ne: cameraBounds.ne,
-          sw: cameraBounds.sw,
-          paddingTop: 120,
-          paddingBottom: 250,
-          paddingLeft: 40,
-          paddingRight: 40
+          ne: cameraBounds.ne, sw: cameraBounds.sw, paddingTop: 120, paddingBottom: 250, paddingLeft: 40, paddingRight: 40
         },
         animationDuration: 1200
       });
     }
-  }, [viewMode, cameraBounds]);
+  }, [viewMode, cameraBounds, route.params?.targetLocation]);
 
   const currentMission = useMemo(() => {
     if (assignedZones.length === 0) return null;
@@ -241,7 +343,6 @@ const DriverRouteScreen = ({ navigation, route }) => {
     return futureMissions.length > 0 ? futureMissions[0] : assignedZones[0];
   }, [assignedZones]);
 
-  // 📍 Sync the Driver's location to the database every 4 seconds
   useEffect(() => {
     let syncInterval;
     
@@ -249,10 +350,10 @@ const DriverRouteScreen = ({ navigation, route }) => {
       syncInterval = setInterval(() => {
         driverService.updateTruckLocation(
           currentMission.vehicle_id, 
-          userLoc[1], // lat
-          userLoc[0]  // lng
+          userLoc[1], 
+          userLoc[0]  
         );
-      }, 4000); // 🔥 UPDATED: Near-live sync for Driver
+      }, 4000); 
     }
 
     return () => {
@@ -261,82 +362,111 @@ const DriverRouteScreen = ({ navigation, route }) => {
   }, [isDriver, userLoc, currentMission]);
 
   const missionBins = currentMission?.bins || [];
-  const progressPercentage = missionBins.length > 0 ? (missionBins.filter(b => b.status === 'Collected').length / missionBins.length) * 100 : 0;
 
-  // 📍 3. SMART AUTO-TARGETING
-  const nearestBin = useMemo(() => {
-    if (!userLoc || !missionBins || missionBins.length === 0) return null;
+  const allStops = useMemo(() => {
+    const formattedBins = missionBins.map(b => ({
+      ...b,
+      stopType: 'bin',
+      targetId: b.bin_id,
+      displayAddress: b.address || 'Point location',
+      isCompleted: b.status === 'Collected',
+      evidence_submitted: b.evidence_submitted || false
+    }));
+
+    const formattedReports = assignedReports.map(r => ({
+      ...r,
+      stopType: 'report',
+      targetId: r.report_id,
+      lat: Number(r.latitude),
+      lng: Number(r.longitude),
+      displayAddress: r.location_address || 'Citizen Report',
+      isCompleted: r.status === 'Resolved',
+      evidence_submitted: r.evidence_submitted || !!r.resolved_photo_url 
+    }));
+
+    return [...formattedBins, ...formattedReports];
+  }, [missionBins, assignedReports]);
+
+  const totalStops = allStops.length;
+  const completedStops = allStops.filter(s => s.isCompleted).length;
+  const progressPercentage = totalStops > 0 ? (completedStops / totalStops) * 100 : 0;
+
+  const nearestStop = useMemo(() => {
+    if (!userLoc || !allStops || allStops.length === 0) return null;
     
-    const uncollectedBins = missionBins.filter(b => b.status !== 'Collected');
-    if (uncollectedBins.length === 0) return null; 
+    const pendingStops = allStops.filter(s => !s.isCompleted);
+    if (pendingStops.length === 0) return null; 
 
-    let closest = uncollectedBins[0];
+    let closest = pendingStops[0];
     let minDistance = Infinity;
 
-    uncollectedBins.forEach(bin => {
-      const dist = getDistance(userLoc[1], userLoc[0], bin.lat, bin.lng);
+    pendingStops.forEach(stop => {
+      const dist = getDistance(userLoc[1], userLoc[0], stop.lat, stop.lng);
       if (dist < minDistance) {
         minDistance = dist;
-        closest = bin;
+        closest = stop;
       }
     });
 
     return closest;
-  }, [userLoc, missionBins]);
+  }, [userLoc, allStops]);
 
-  // 📸 COLLECTOR: Handle taking the evidence photo
   const handleTakePhoto = () => {
-    if (!nearestBin || !userLoc) return;
+    if (!nearestStop || !userLoc) return;
 
-    const distanceKm = getDistance(userLoc[1], userLoc[0], nearestBin.lat, nearestBin.lng);
+    const distanceKm = getDistance(userLoc[1], userLoc[0], nearestStop.lat, nearestStop.lng);
     const distanceMeters = distanceKm * 1000;
 
     if (distanceMeters > 15) {
       Alert.alert(
         "Too far away!", 
-        `You are ${Math.round(distanceMeters)}m away from the bin. Please get within 15 meters to take the photo.`
+        `You are ${Math.round(distanceMeters)}m away from the target. Please get within 15 meters to take the photo.`
       );
       return;
     }
 
-    // Geofence passed! Open the camera screen and PASS THE TASK ID
-    navigation.navigate('CameraCaptureScreen', { 
-      binId: nearestBin.bin_id,
-      zoneId: activeZoneId,
-      taskId: currentMission?.task_id 
-    });
-  };
-
-  // 🚚 DRIVER: Handle Confirming Collection
-  const handleAction = async () => { 
-    if (!nearestBin) return;
-
-    try {
-      // 1. Fire the API to update the database
-      await driverService.confirmCollection(nearestBin.bin_id);
-
-      // 2. Update the local map state so the bin turns gray and gets checked off
-      const updatedZones = assignedZones.map(zone => {
-        if (zone.zone_id === activeZoneId) {
-          return {
-            ...zone,
-            bins: zone.bins.map(b => b.bin_id === nearestBin.bin_id ? { ...b, status: 'Collected' } : b)
-          };
-        }
-        return zone;
+    if (nearestStop.stopType === 'report') {
+      navigation.navigate('CameraCaptureScreen', { 
+        reportId: nearestStop.targetId,
+        taskId: currentMission?.task_id 
       });
-
-      setAssignedZones(updatedZones);
-      console.log("Collection confirmed and updated in database!");
-
-    } catch (error) {
-      Alert.alert("Error", "Could not confirm collection. Please check your connection.");
+    } else {
+      navigation.navigate('CameraCaptureScreen', { 
+        binId: nearestStop.targetId,
+        zoneId: activeZoneId,
+        taskId: currentMission?.task_id 
+      });
     }
   };
 
-  // 📍 4. DIRECTIONAL LINE LOGIC
+  const handleAction = async () => { 
+    if (!nearestStop) return;
+
+    try {
+      if (nearestStop.stopType === 'report') {
+        await mobileService.confirmReportResolution(nearestStop.targetId);
+        await loadAssignedData(); 
+      } else {
+        await driverService.confirmCollection(nearestStop.targetId);
+        const updatedZones = assignedZones.map(zone => {
+          if (zone.zone_id === activeZoneId) {
+            return {
+              ...zone,
+              bins: zone.bins.map(b => b.bin_id === nearestStop.targetId ? { ...b, status: 'Collected' } : b)
+            };
+          }
+          return zone;
+        });
+        setAssignedZones(updatedZones);
+      }
+    } catch (error) {
+      console.error("Action Error:", error);
+      Alert.alert("Error", "Could not complete action. Please check your connection.");
+    }
+  };
+
   const bearingLine = useMemo(() => {
-    if (!userLoc || !nearestBin) return null;
+    if (!userLoc || !nearestStop) return null;
     return {
       type: 'FeatureCollection',
       features: [
@@ -344,15 +474,17 @@ const DriverRouteScreen = ({ navigation, route }) => {
           type: 'Feature',
           geometry: {
             type: 'LineString',
-            coordinates: [userLoc, [nearestBin.lng, nearestBin.lat]],
+            coordinates: [userLoc, [nearestStop.lng, nearestStop.lat]],
           },
         },
       ],
     };
-  }, [userLoc, nearestBin]);
+  }, [userLoc, nearestStop]);
 
   const handleRecenter = () => {
     setIsTracking(true);
+    setFocusedReportId(null);
+
     if (userLoc && mapCameraRef.current) {
       mapCameraRef.current.setCamera({
         centerCoordinate: userLoc,
@@ -362,70 +494,87 @@ const DriverRouteScreen = ({ navigation, route }) => {
     } else if (cameraBounds && mapCameraRef.current) {
       mapCameraRef.current.setCamera({
         bounds: {
-          ne: cameraBounds.ne,
-          sw: cameraBounds.sw,
-          paddingTop: 120,
-          paddingBottom: 250, 
-          paddingLeft: 40,
-          paddingRight: 40
+          ne: cameraBounds.ne, sw: cameraBounds.sw, paddingTop: 120, paddingBottom: 250, paddingLeft: 40, paddingRight: 40
         },
         animationDuration: 1000
       });
     }
   };
 
-  // 🚚 Determine the coordinates to draw the truck (Live GPS for Driver, DB Coords for Collector)
   const truckCoords = isDriver 
     ? userLoc 
     : (currentMission?.truck_lng && currentMission?.truck_lat 
         ? [currentMission.truck_lng, currentMission.truck_lat] 
         : null);
   
-  // Included `viewMode` in IDs to prevent Layer caching collisions, and composite keys
   const renderMapFeatures = (isNavigationMode) => {
-    // Determine the current view string to make Mapbox layer IDs 100% unique per screen
     const currentView = isNavigationMode ? 'nav' : 'overview';
 
-    return assignedZones.map((z, zIdx) => (
-      <React.Fragment key={`zone-wrapper-${currentView}-${z.zone_id}-${zIdx}`}>
-        {z.polygonCoords?.length > 0 && (
-          <MapboxGL.ShapeSource 
-            id={`source-${currentView}-${z.zone_id}-${zIdx}`} 
-            shape={{ type: 'Feature', geometry: { type: 'Polygon', coordinates: [z.polygonCoords] } }}
-          >
-            <MapboxGL.FillLayer 
-              id={`fill-${currentView}-${z.zone_id}-${zIdx}`} 
-              style={{ 
-                fillColor: z.zone_color || '#10B981', 
-                fillOpacity: z.zone_id === activeZoneId ? 0.25 : 0.08 
-              }} 
-            />
-            <MapboxGL.LineLayer 
-              id={`line-${currentView}-${z.zone_id}-${zIdx}`} 
-              style={{ lineColor: z.zone_color || '#10B981', lineWidth: 1 }} 
-            />
-          </MapboxGL.ShapeSource>
-        )}
+    return (
+      <>
+        {assignedZones.map((z, zIdx) => (
+          <React.Fragment key={`zone-wrapper-${currentView}-${z.zone_id}-${zIdx}`}>
+            {z.polygonCoords?.length > 0 && (
+              <MapboxGL.ShapeSource 
+                id={`source-${currentView}-${z.zone_id}-${zIdx}`} 
+                shape={{ type: 'Feature', geometry: { type: 'Polygon', coordinates: [z.polygonCoords] } }}
+              >
+                <MapboxGL.FillLayer 
+                  id={`fill-${currentView}-${z.zone_id}-${zIdx}`} 
+                  style={{ 
+                    fillColor: z.zone_color || '#10B981', 
+                    fillOpacity: z.zone_id === activeZoneId ? 0.25 : 0.08 
+                  }} 
+                />
+                <MapboxGL.LineLayer 
+                  id={`line-${currentView}-${z.zone_id}-${zIdx}`} 
+                  style={{ lineColor: z.zone_color || '#10B981', lineWidth: 1 }} 
+                />
+              </MapboxGL.ShapeSource>
+            )}
 
-        {z.bins.map((b, bIdx) => {
-          const isTarget = isNavigationMode && nearestBin?.bin_id === b.bin_id;
+            {z.bins.map((b, bIdx) => {
+              const isTarget = isNavigationMode && nearestStop?.targetId === b.bin_id && nearestStop?.stopType === 'bin';
+              return (
+                <MapboxGL.PointAnnotation 
+                  key={`point-${currentView}-${z.zone_id}-${b.bin_id}-${bIdx}`} 
+                  id={`ann-bin-${currentView}-${z.zone_id}-${b.bin_id}-${bIdx}`} 
+                  coordinate={[b.lng, b.lat]}
+                >
+                  <RenderBinMarker status={b.status} isNext={isTarget} />
+                </MapboxGL.PointAnnotation>
+              );
+            })}
+          </React.Fragment>
+        ))}
+
+        {assignedReports.map((report, rIdx) => {
+          const isTarget = isNavigationMode && nearestStop?.targetId === report.report_id && nearestStop?.stopType === 'report';
+          const isFocused = focusedReportId === report.report_id;
+          const displayIssue = report.issue_type === 'Other' ? report.issue_type_other : report.issue_type;
+          
+          // ✅ Pass the resolved status to the marker so it knows when to turn gray
+          const isCompleted = report.status === 'Resolved';
+
           return (
             <MapboxGL.PointAnnotation 
-              key={`point-${currentView}-${z.zone_id}-${b.bin_id}-${bIdx}`} 
-              id={`ann-bin-${currentView}-${z.zone_id}-${b.bin_id}-${bIdx}`} 
-              coordinate={[b.lng, b.lat]}
+              key={`report-${currentView}-${report.report_id}-${rIdx}`} 
+              id={`ann-report-${currentView}-${report.report_id}-${rIdx}`} 
+              coordinate={[Number(report.longitude), Number(report.latitude)]}
             >
-              <RenderBinMarker status={b.status} isNext={isTarget} />
+              <RenderReportMarker 
+                isNext={isTarget} 
+                showLabel={isFocused || isTarget} 
+                issueType={displayIssue}
+                isCompleted={isCompleted}
+              />
             </MapboxGL.PointAnnotation>
           );
         })}
-      </React.Fragment>
-    ));
+      </>
+    );
   };
 
-  // ==========================================
-  // VIEW: OVERVIEW MODE
-  // ==========================================
   if (viewMode === 'overview') {
     return (
       <View style={styles.container}>
@@ -483,9 +632,7 @@ const DriverRouteScreen = ({ navigation, route }) => {
                  <MapboxGL.Camera 
                    animationDuration={1000}
                    bounds={cameraBounds ? {
-                     ne: cameraBounds.ne,
-                     sw: cameraBounds.sw,
-                     paddingTop: 40, paddingBottom: 40, paddingLeft: 40, paddingRight: 40
+                     ne: cameraBounds.ne, sw: cameraBounds.sw, paddingTop: 40, paddingBottom: 40, paddingLeft: 40, paddingRight: 40
                    } : undefined}
                    centerCoordinate={!cameraBounds ? INITIAL_COORDINATES : undefined} 
                    zoomLevel={!cameraBounds ? 14 : undefined}
@@ -496,8 +643,6 @@ const DriverRouteScreen = ({ navigation, route }) => {
                    onUpdate={(location) => setUserLoc([location.coords.longitude, location.coords.latitude])} 
                  />
                  
-                 {/* 🔥 UPDATED: Shared Truck Marker logic using PointAnnotation */}
-                 {/* 🔥 REVERTED: Back to MarkerView so the image actually renders! */}
                  {truckCoords && (
                    <MapboxGL.MarkerView id="shared-truck-overview" coordinate={truckCoords}>
                      <View style={styles.customTruckPuck}>
@@ -515,7 +660,6 @@ const DriverRouteScreen = ({ navigation, route }) => {
                </MapboxGL.MapView>
              )}
              <View style={styles.mapControls}>
-                {/* SET TRACKING TO FALSE HERE BEFORE SWITCHING VIEW */}
                 <TouchableOpacity style={styles.mapControlBtn} onPress={() => { setIsTracking(false); setViewMode('navigation'); }}><Maximize2 size={18} color="#1e293b" /></TouchableOpacity>
                 <TouchableOpacity style={[styles.mapControlBtn, { marginTop: 10 }]} onPress={() => setMapType(mapType === 'standard' ? 'hybrid' : 'standard')}><Layers size={18} color={mapType === 'hybrid' ? '#10B981' : '#1e293b'} /></TouchableOpacity>
              </View>
@@ -523,7 +667,7 @@ const DriverRouteScreen = ({ navigation, route }) => {
 
           <View style={styles.enhancedProgressCard}>
              <View style={styles.progressDataRow}>
-                <View><Text style={styles.progressMainTitle}>Mission Progress</Text><Text style={styles.progressSubTitle}>{missionBins.filter(b => b.status === 'Collected').length} of {missionBins.length} stops</Text></View>
+                <View><Text style={styles.progressMainTitle}>Mission Progress</Text><Text style={styles.progressSubTitle}>{completedStops} of {totalStops} stops</Text></View>
                 <View style={styles.progressCircleContainer}><Text style={styles.progressPercentageText}>{Math.round(progressPercentage)}%</Text></View>
              </View>
              <View style={styles.trackContainer}><View style={styles.trackBackground} /><LinearGradient colors={['#34D399', '#10B981']} start={{x:0, y:0}} end={{x:1, y:0}} style={[styles.trackFill, {width: `${progressPercentage}%`}]} /></View>
@@ -531,24 +675,29 @@ const DriverRouteScreen = ({ navigation, route }) => {
 
           <Text style={styles.sectionTitle}>Stop Schedule</Text>
           <View style={styles.timelineContainer}>
-            {missionBins.length > 0 ? (
-                missionBins.map((item, index) => {
-                const isDone = item.status === 'Collected';
-                const isNext = !isDone && nearestBin?.bin_id === item.bin_id;
+            {allStops.length > 0 ? (
+                allStops.map((item, index) => {
+                const isDone = item.isCompleted;
+                const isNext = !isDone && nearestStop?.targetId === item.targetId;
+                const isReport = item.stopType === 'report';
                 
                 return (
-                    <View key={`timeline-row-${item.bin_id}-${index}`} style={styles.timelineRow}>
+                    <View key={`timeline-row-${item.targetId}-${index}`} style={styles.timelineRow}>
                         <View style={styles.timelineGraphics}>
-                            <View style={[styles.timelineLine, index === missionBins.length - 1 && { opacity: 0 }, isDone && {backgroundColor: '#10B981'}]} />
+                            <View style={[styles.timelineLine, index === allStops.length - 1 && { opacity: 0 }, isDone && {backgroundColor: '#10B981'}]} />
                             <View style={[styles.timelineNode, isDone ? {backgroundColor: '#10B981'} : (isNext ? {backgroundColor: '#3B82F6'} : {backgroundColor: '#F1F5F9'})]}>
                                 {isDone ? <CheckCircle2 size={14} color="white" /> : (isNext ? <Target size={14} color="white" /> : <Text style={{fontSize: 10, fontWeight: '900', color: '#94a3b8'}}>{index + 1}</Text>)}
                             </View>
                         </View>
-                        <TouchableOpacity activeOpacity={0.7} style={[styles.enhancedStopCard, isNext && styles.activeStopGlow, isDone && {opacity: 0.6}]}>
+                        <TouchableOpacity activeOpacity={0.7} style={[styles.enhancedStopCard, isNext && styles.activeStopGlow, isDone && {opacity: 0.6}, isReport && {borderColor: '#FECACA', borderWidth: 1}]}>
                             <View style={{flexDirection: 'row', alignItems: 'center'}}>
                                 <View style={{flex: 1}}>
-                                    <Text style={[styles.enhancedStopAddr, isDone && {textDecorationLine: 'line-through'}]}>{item.address || 'Point location'}</Text>
-                                    <Text style={styles.stopDistText}>Mission: {currentMission?.zone_name}</Text>
+                                    <Text style={[styles.enhancedStopAddr, isDone && {textDecorationLine: 'line-through'}, isReport && {color: '#DC2626'}]}>
+                                      {isReport ? `Citizen Report: ${item.displayAddress}` : item.displayAddress}
+                                    </Text>
+                                    <Text style={styles.stopDistText}>
+                                      {isReport ? `Task #${item.targetId}` : `Mission: ${currentMission?.zone_name}`}
+                                    </Text>
                                 </View>
                                 {isNext ? (<LinearGradient colors={['#3B82F6', '#2563EB']} style={styles.goButton}><Navigation size={16} color="white" /></LinearGradient>) : (<ChevronRight size={20} color="#cbd5e1" />)}
                             </View>
@@ -565,7 +714,6 @@ const DriverRouteScreen = ({ navigation, route }) => {
           </View>
         </ScrollView>
         <View style={[styles.stickyFooter, { paddingBottom: insets.bottom + 15 }]}>
-            {/* SET TRACKING TO FALSE HERE BEFORE SWITCHING VIEW */}
             <TouchableOpacity activeOpacity={0.9} onPress={() => { setIsTracking(false); setViewMode('navigation'); }}>
               <LinearGradient colors={['#10B981', '#059669']} start={{x:0, y:0}} end={{x:1, y:0}} style={styles.engageBtn}>
                  <Navigation size={22} color="white" style={{marginRight: 10}} />
@@ -601,10 +749,10 @@ const DriverRouteScreen = ({ navigation, route }) => {
                 setIsTracking(false);
               }
             }}
-            bounds={!isTracking && cameraBounds ? {
+            bounds={!isTracking && cameraBounds && !route.params?.targetLocation ? {
               ne: cameraBounds.ne, sw: cameraBounds.sw, paddingTop: 120, paddingBottom: 250, paddingLeft: 40, paddingRight: 40
             } : undefined}
-            centerCoordinate={!isTracking && !cameraBounds ? INITIAL_COORDINATES : undefined} 
+            centerCoordinate={!isTracking && !cameraBounds && !route.params?.targetLocation ? INITIAL_COORDINATES : undefined} 
           />
           
           <MapboxGL.UserLocation 
@@ -614,23 +762,15 @@ const DriverRouteScreen = ({ navigation, route }) => {
             }} 
           />
 
-          {/* 🔥 UPDATED: Only show the directional dashed line if the user is a Driver */}
           {isDriver && bearingLine && (
             <MapboxGL.ShapeSource id="routeLineSource-nav" shape={bearingLine}>
               <MapboxGL.LineLayer
                 id="routeLineLayer-nav"
-                style={{
-                  lineColor: '#3B82F6', 
-                  lineWidth: 4,
-                  lineDasharray: [2, 2],
-                  lineOpacity: 0.8,
-                }}
+                style={{ lineColor: '#3B82F6', lineWidth: 4, lineDasharray: [2, 2], lineOpacity: 0.8 }}
               />
             </MapboxGL.ShapeSource>
           )}
 
-          {/* 🔥 UPDATED: Shared Truck Marker logic for navigation map using PointAnnotation */}
-          {/* 🔥 REVERTED: Back to MarkerView so the image actually renders! */}
           {truckCoords && (
             <MapboxGL.MarkerView id="shared-truck-mission" coordinate={truckCoords}>
               <View style={[styles.customTruckPuck, !isTracking && { borderColor: '#94a3b8' }]}>
@@ -664,48 +804,48 @@ const DriverRouteScreen = ({ navigation, route }) => {
          <View style={styles.instrCard}>
             <Text style={styles.instrNext}>NEAREST DESTINATION</Text>
             <Text style={styles.instrAddr} numberOfLines={1}>
-              {nearestBin ? nearestBin.address : 'All Stops Completed 🎉'}
+              {nearestStop ? nearestStop.displayAddress : 'All Stops Completed'}
             </Text>
             <View style={styles.instrActions}>
                 <TouchableOpacity style={styles.instrBtnAlert}>
                   <AlertTriangle size={22} color="#EF4444" />
                 </TouchableOpacity>
 
-                {/* 🔥 ROLE-BASED BUTTON LOGIC */}
                 {isDriver ? (
-                    /* DRIVER VIEW */
                     <TouchableOpacity 
-                        style={[
-                            styles.instrBtnMain, 
-                            (!nearestBin || !nearestBin.evidence_submitted) && { opacity: 0.5 }
-                        ]} 
-                        disabled={!nearestBin || !nearestBin.evidence_submitted} 
+                        style={[styles.instrBtnMain, (!nearestStop || !nearestStop.evidence_submitted) && { opacity: 0.5 }]} 
+                        disabled={!nearestStop || !nearestStop.evidence_submitted} 
                         onPress={handleAction}
                     >
                         <LinearGradient 
-                            colors={nearestBin?.evidence_submitted ? ['#10B981', '#059669'] : ['#94a3b8', '#64748b']} 
+                            colors={nearestStop?.evidence_submitted ? ['#10B981', '#059669'] : ['#94a3b8', '#64748b']} 
                             style={styles.instrBtnGrad}
                         >
-                            <Text style={styles.instrBtnText}>
-                                {!nearestBin 
-                                    ? 'ROUTE CLEAR' 
-                                    : nearestBin.evidence_submitted 
-                                        ? 'CONFIRM COLLECTION' 
-                                        : 'WAITING FOR PHOTO...'}
-                            </Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                               {nearestStop?.evidence_submitted && <CheckCircle2 size={18} color="white" style={{ marginRight: 8 }} />}
+                               <Text style={styles.instrBtnText}>
+                                   {!nearestStop 
+                                       ? 'ROUTE CLEAR' 
+                                       : nearestStop.evidence_submitted 
+                                           ? (nearestStop.stopType === 'report' ? 'CONFIRM RESOLUTION' : 'CONFIRM COLLECTION') 
+                                           : 'WAITING FOR PHOTO...'}
+                               </Text>
+                            </View>
                         </LinearGradient>
                     </TouchableOpacity>
                 ) : (
-                    /* COLLECTOR VIEW */
                     <TouchableOpacity 
-                        style={[styles.instrBtnMain, !nearestBin && { opacity: 0.5 }]} 
-                        disabled={!nearestBin} 
-                        onPress={handleTakePhoto}
+                        style={[styles.instrBtnMain, !nearestStop && { opacity: 0.5 }]} 
+                        disabled={!nearestStop} 
+                        onPress={handleTakePhoto} 
                     >
-                        <LinearGradient colors={['#3B82F6', '#2563EB']} style={styles.instrBtnGrad}>
-                            <Text style={styles.instrBtnText}>
-                                {nearestBin ? '📸 TAKE EVIDENCE PHOTO' : 'ALL DONE'}
-                            </Text>
+                        <LinearGradient colors={nearestStop?.stopType === 'report' ? ['#10B981', '#059669'] : ['#3B82F6', '#2563EB']} style={styles.instrBtnGrad}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                {nearestStop && <Camera size={18} color="white" style={{ marginRight: 8 }} />}
+                                <Text style={styles.instrBtnText}>
+                                    {!nearestStop ? 'ALL DONE' : 'TAKE EVIDENCE PHOTO'}
+                                </Text>
+                            </View>
                         </LinearGradient>
                     </TouchableOpacity>
                 )}
@@ -831,8 +971,76 @@ const styles = StyleSheet.create({
   blueTip: { backgroundColor: '#1d4ed8' },
   collectedCore: { backgroundColor: '#94a3b8' },
   collectedTip: { backgroundColor: '#94a3b8' },
-  markerHalo: { position: 'absolute', width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(59, 130, 246, 0.2)' },
-  markerCore: { width: 24, height: 24, borderRadius: 12, borderWidth: 3, borderColor: 'white', justifyContent: 'center', alignItems: 'center' },
+  
+  reportMarkerContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 40,
+    height: 40,
+  },
+  reportPulse: {
+    position: 'absolute',
+    width: 35,
+    height: 35,
+    borderRadius: 20,
+    backgroundColor: 'rgba(239, 68, 68, 0.3)', // RED Pulse
+  },
+  reportCore: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#DC2626', // RED Core
+    borderWidth: 2,
+    borderColor: 'white',
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 5,
+    zIndex: 2,
+  },
+  reportTip: {
+    width: 10,
+    height: 10,
+    backgroundColor: '#DC2626', // RED Tip
+    borderBottomWidth: 2,
+    borderRightWidth: 2,
+    borderColor: 'white',
+    transform: [{ rotate: '45deg' }],
+    marginTop: -5,
+    zIndex: 1,
+  },
+
+  calloutBubble: {
+    backgroundColor: '#DC2626',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+  },
+  calloutText: {
+    color: 'white',
+    fontSize: 10,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5
+  },
+  calloutTriangle: {
+    width: 0,
+    height: 0,
+    backgroundColor: 'transparent',
+    borderStyle: 'solid',
+    borderLeftWidth: 6,
+    borderRightWidth: 6,
+    borderTopWidth: 6,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    borderTopColor: '#DC2626',
+    alignSelf: 'center',
+    marginTop: -1
+  },
 
   customTruckPuck: {
     width: 46,
