@@ -1,7 +1,8 @@
 const express = require('express');
 const router = express.Router();
-const { submitReport, getAllReports, toggleAttention, updateReportStatus, deleteReport, assignTeam } = require('../controllers/reportController');
-const reportUpload = require('../middleware/reportUpload'); 
+const { submitReport, getAllReports, toggleAttention, updateReportStatus, deleteReport, assignTeam, uploadReportEvidence, confirmReportResolution } = require('../controllers/reportController');
+const reportUpload = require('../middleware/reportUpload');
+const evidenceUpload = require('../middleware/collectionUpload'); 
 const authorize = require('../middleware/auth'); // Ensure this middleware is imported
 
 // POST: Submit a new report
@@ -17,5 +18,11 @@ router.post('/toggle-attention', authorize, toggleAttention);
 router.put('/:id/status', authorize, updateReportStatus);
 router.put('/:id/assign', authorize, assignTeam);
 router.delete('/:id', authorize, deleteReport);
+
+// 📸 Route for Collector to upload the photo (Using evidenceUpload to put it in collection_rec!)
+router.post('/:id/evidence', authorize, evidenceUpload.single('photo'), uploadReportEvidence);
+
+// 🚚 Route for Driver to confirm the task
+router.put('/:id/confirm-resolution', authorize, confirmReportResolution);
 
 module.exports = router;
