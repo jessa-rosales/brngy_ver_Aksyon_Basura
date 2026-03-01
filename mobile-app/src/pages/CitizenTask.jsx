@@ -15,7 +15,6 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
-  Linking,
   Alert
 } from 'react-native';
 
@@ -33,14 +32,14 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { mobileService } from '../services/mobileService';
 
-const CitizenTask = () => {
+const CitizenTask = ({ navigation, route }) => {
   const insets = useSafeAreaInsets();
   const listRef = useRef(null);
 
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [activeFilter, setActiveFilter] = useState('In Progress'); // Default to their active tasks
+  const [activeFilter, setActiveFilter] = useState('In Progress'); 
   const [currentUser, setCurrentUser] = useState(null);
 
   const fetchTasks = async () => {
@@ -50,13 +49,9 @@ const CitizenTask = () => {
         setCurrentUser(JSON.parse(userData));
       }
 
-      // Fetch reports. In a real scenario, your backend should optimally 
-      // have an endpoint like getMyTasks(), but here we filter the reports 
-      // fetched to match their assignments.
       const result = await mobileService.getAllReports();
       if (result.success) {
-        // You might need to adjust this filter based on how your backend sends the assigned_driver_name or team ID
-        // For now, we display the reports that are not pending.
+        // Only show reports that are not 'Pending'
         const assignedTasks = result.reports.filter(r => r.status !== 'Pending');
         setTasks(assignedTasks);
       }
@@ -80,66 +75,36 @@ const CitizenTask = () => {
   useFocusEffect(
     useCallback(() => {
       fetchTasks();
-      if (listRef.current) {
-        listRef.current.scrollToOffset({ offset: 0, animated: false });
-      }
     }, [])
   );
 
-  const handleNavigate = (lat, lng, label) => {
+  const handleNavigate = (lat, lng, label, reportId) => {
     if (!lat || !lng) {
       Alert.alert("Error", "Location coordinates not available.");
       return;
     }
-    const scheme = Platform.select({ ios: 'maps:0,0?q=', android: 'geo:0,0?q=' });
-    const latLng = `${lat},${lng}`;
-    const url = Platform.select({
-      ios: `${scheme}${label}@${latLng}`,
-      android: `${scheme}${latLng}(${label})`
+    
+    navigation.navigate('Route', {
+      targetLocation: {
+        lat: Number(lat),
+        lng: Number(lng),
+        reportId: reportId
+      }
     });
-    Linking.openURL(url);
   };
 
-  const handleResolveTask = async (reportId) => {
-    Alert.alert(
-      "Resolve Task",
-      "Are you sure you want to mark this task as resolved?",
-      [
-        { text: "Cancel", style: "cancel" },
-        { 
-          text: "Yes, Resolve", 
-          onPress: async () => {
-            // Optimistic UI update
-            setTasks(prevTasks => 
-              prevTasks.map(task => 
-                task.report_id === reportId ? { ...task, status: 'Resolved' } : task
-              )
-            );
-
-            try {
-              // Note: Make sure you have this updateStatus method in your mobileService
-              const result = await mobileService.updateReportStatus(reportId, 'Resolved');
-              if (!result || !result.success) {
-                fetchTasks(); // Rollback if it fails
-                Alert.alert("Error", "Failed to update task status.");
-              }
-            } catch (error) {
-              fetchTasks(); // Rollback on error
-              Alert.alert("Error", "Network error occurred.");
-            }
-          }
-        }
-      ]
-    );
-  };
-
-  const filteredTasks = tasks.filter(task => {
-    if (activeFilter === 'All Tasks') return true;
-    return task.status === activeFilter;
-  });
+  const filteredTasks = tasks
+    .filter(task => task.status === activeFilter)
+    .sort((a, b) => {
+      if (activeFilter === 'Resolved') {
+        const timeA = a.resolved_at ? new Date(a.resolved_at).getTime() : new Date(a.created_at).getTime();
+        const timeB = b.resolved_at ? new Date(b.resolved_at).getTime() : new Date(b.created_at).getTime();
+        return timeB - timeA; 
+      }
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
 
   const TaskCard = ({ item }) => {
-    const fullName = item.reporter_name || "Citizen";
     const displayIssue = item.issue_type === 'Other' ? item.issue_type_other : item.issue_type;
     const reportDate = new Date(item.created_at);
     const formattedDate = reportDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -169,7 +134,7 @@ const CitizenTask = () => {
               )}
             </View>
             <View>
-              <Text style={styles.citizenNameText}>{fullName}</Text>
+              <Text style={styles.citizenNameText}>{item.reporter_name || "Citizen"}</Text>
               <Text style={styles.reporterLabel}>Reported By</Text>
             </View>
           </View>
@@ -208,31 +173,17 @@ const CitizenTask = () => {
         </View>
 
         <View style={styles.cardActionsRow}>
-          {/* Adapted Button for Drivers/Collectors */}
-          <TouchableOpacity
-            activeOpacity={0.7}
-            disabled={isResolved}
-            style={[
-              styles.resolveBtn,
-              isResolved && styles.resolveBtnActive
-            ]}
-            onPress={() => handleResolveTask(item.report_id)}
-          >
-            <CheckCircle2
-              size={18}
-              color={isResolved ? "#FFFFFF" : "#10B981"}
-            />
-            <Text style={[
-              styles.resolveText,
-              isResolved && styles.resolveTextActive
-            ]}>
-              {isResolved ? 'Task Resolved' : 'Mark Resolved'}
-            </Text>
-          </TouchableOpacity>
+          {/* ✅ UPDATED: If Resolved, show non-clickable badge. If In Progress, show nothing here. */}
+          {isResolved ? (
+            <View style={[styles.resolveBtn, styles.resolveBtnActive]}>
+              <CheckCircle2 size={18} color="#FFFFFF" />
+              <Text style={[styles.resolveText, styles.resolveTextActive]}>Task Resolved</Text>
+            </View>
+          ) : null}
 
           <TouchableOpacity 
-            style={styles.navigateBtnSmall}
-            onPress={() => handleNavigate(item.latitude, item.longitude, displayIssue)}
+            style={[styles.navigateBtnSmall, isResolved && { flex: 0.7 }]}
+            onPress={() => handleNavigate(item.latitude, item.longitude, displayIssue, item.report_id)}
           >
             <Navigation size={18} color="#fff" />
             <Text style={styles.navigateTextSmall}>Navigate</Text>
@@ -247,7 +198,7 @@ const CitizenTask = () => {
       <View style={[styles.headerSection, { paddingTop: Platform.OS === 'ios' ? insets.top : 15 }]}>
         <Text style={styles.headerTitle}>Assigned Tasks</Text>
         <View style={styles.filterContainer}>
-          {['All Tasks', 'In Progress', 'Resolved'].map((tab) => (
+          {['In Progress', 'Resolved'].map((tab) => (
             <TouchableOpacity
               key={tab}
               onPress={() => setActiveFilter(tab)}
@@ -280,217 +231,43 @@ const CitizenTask = () => {
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#E3F3DF'
-  },
-  headerSection: {
-    backgroundColor: '#F6FBF6',
-    paddingHorizontal: 20,
-    paddingBottom: 15,
-    borderBottomLeftRadius: 25,
-    borderBottomRightRadius: 25,
-    elevation: 5
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: '900',
-    color: '#1B5E20',
-    marginBottom: 15
-  },
-  filterContainer: {
-    flexDirection: 'row',
-    backgroundColor: '#F1F5F9',
-    borderRadius: 15,
-    padding: 5
-  },
-  filterTab: {
-    flex: 1,
-    paddingVertical: 10,
-    alignItems: 'center',
-    borderRadius: 12
-  },
-  activeTab: {
-    backgroundColor: '#1B5E20'
-  },
-  filterTabText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#64748b'
-  },
-  activeTabText: {
-    color: '#fff'
-  },
-  listContainer: {
-    padding: 15
-  },
-  reportCard: {
-    backgroundColor: '#F6FBF6',
-    borderRadius: 25,
-    marginBottom: 20,
-    overflow: 'hidden',
-    elevation: 3
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9'
-  },
-  userInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10
-  },
-  avatarCircle: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: '#F8FAFC',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    overflow: 'hidden'
-  },
-  avatarImage: {
-    width: '100%',
-    height: '100%'
-  },
-  citizenNameText: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#1E293B'
-  },
-  reporterLabel: {
-    fontSize: 9,
-    fontWeight: '800',
-    color: '#94a3b8',
-    textTransform: 'uppercase',
-    marginTop: 2
-  },
-  timeInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4
-  },
-  dateText: {
-    fontSize: 11,
-    color: '#94a3b8',
-    fontWeight: '600'
-  },
-  reportImage: {
-    width: '100%',
-    height: 230,
-    backgroundColor: '#F1F5F9'
-  },
-  cardContent: {
-    padding: 15
-  },
-  issueRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8
-  },
-  issueTypeText: {
-    fontSize: 18,
-    fontWeight: '900',
-    color: '#0F172A',
-    flex: 1
-  },
-  statusBadgeSmall: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 20
-  },
-  statusTextSmall: {
-    fontSize: 10,
-    fontWeight: '800',
-    textTransform: 'uppercase'
-  },
-  locationRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    marginBottom: 12
-  },
-  locationText: {
-    fontSize: 13,
-    color: '#64748b',
-    fontWeight: '600'
-  },
-  descriptionBox: {
-    backgroundColor: '#F8FAFC',
-    padding: 12,
-    borderRadius: 15,
-    borderLeftWidth: 4,
-    borderLeftColor: '#CBD5E1'
-  },
-  descriptionLabel: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#475569',
-    marginBottom: 2,
-    textTransform: 'uppercase'
-  },
-  descriptionText: {
-    fontSize: 14,
-    color: '#334155',
-    lineHeight: 20
-  },
-  cardActionsRow: {
-    flexDirection: 'row',
-    padding: 15,
-    paddingTop: 0,
-    gap: 10
-  },
-  resolveBtn: {
-    flex: 1.3,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    height: 48,
-    borderRadius: 14,
-    borderWidth: 1.5,
-    borderColor: '#D1FAE5',
-    backgroundColor: '#FFF'
-  },
-  resolveBtnActive: {
-    backgroundColor: '#10B981',
-    borderColor: '#10B981',
-    opacity: 0.7
-  },
-  resolveText: {
-    color: '#10B981',
-    fontSize: 12,
-    fontWeight: '800'
-  },
-  resolveTextActive: {
-    color: '#FFF'
-  },
-  navigateBtnSmall: {
-    flex: 0.7,
-    backgroundColor: '#1B5E20',
-    height: 48,
-    borderRadius: 14,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 8,
-    elevation: 2
-  },
-  navigateTextSmall: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '800'
-  }
+  container: { flex: 1, backgroundColor: '#E3F3DF' },
+  headerSection: { backgroundColor: '#F6FBF6', paddingHorizontal: 20, paddingBottom: 15, borderBottomLeftRadius: 25, borderBottomRightRadius: 25, elevation: 5 },
+  headerTitle: { fontSize: 24, fontWeight: '900', color: '#1B5E20', marginBottom: 15 },
+  filterContainer: { flexDirection: 'row', backgroundColor: '#F1F5F9', borderRadius: 15, padding: 5 },
+  filterTab: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 12 },
+  activeTab: { backgroundColor: '#1B5E20' },
+  filterTabText: { fontSize: 13, fontWeight: '700', color: '#64748b' },
+  activeTabText: { color: '#fff' },
+  listContainer: { padding: 15 },
+  reportCard: { backgroundColor: '#F6FBF6', borderRadius: 25, marginBottom: 20, overflow: 'hidden', elevation: 3 },
+  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 15, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
+  userInfo: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  avatarCircle: { width: 34, height: 34, borderRadius: 17, backgroundColor: '#F8FAFC', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0', overflow: 'hidden' },
+  avatarImage: { width: '100%', height: '100%' },
+  citizenNameText: { fontSize: 14, fontWeight: '800', color: '#1E293B' },
+  reporterLabel: { fontSize: 9, fontWeight: '800', color: '#94a3b8', textTransform: 'uppercase', marginTop: 2 },
+  timeInfo: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  dateText: { fontSize: 11, color: '#94a3b8', fontWeight: '600' },
+  reportImage: { width: '100%', height: 230, backgroundColor: '#F1F5F9' },
+  cardContent: { padding: 15 },
+  issueRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  issueTypeText: { fontSize: 18, fontWeight: '900', color: '#0F172A', flex: 1 },
+  statusBadgeSmall: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
+  statusTextSmall: { fontSize: 10, fontWeight: '800', textTransform: 'uppercase' },
+  locationRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 12 },
+  locationText: { fontSize: 13, color: '#64748b', fontWeight: '600' },
+  descriptionBox: { backgroundColor: '#F8FAFC', padding: 12, borderRadius: 15, borderLeftWidth: 4, borderLeftColor: '#CBD5E1' },
+  descriptionLabel: { fontSize: 11, fontWeight: '800', color: '#475569', marginBottom: 2, textTransform: 'uppercase' },
+  descriptionText: { fontSize: 14, color: '#334155', lineHeight: 20 },
+  cardActionsRow: { flexDirection: 'row', padding: 15, paddingTop: 0, gap: 10 },
+  resolveBtn: { flex: 1.3, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, height: 48, borderRadius: 14, borderWidth: 1.5, borderColor: '#10B981', backgroundColor: '#FFF' },
+  resolveBtnActive: { backgroundColor: '#10B981', opacity: 0.8 },
+  resolveText: { color: '#10B981', fontSize: 12, fontWeight: '800' },
+  resolveTextActive: { color: '#FFF' },
+  navigateBtnSmall: { flex: 1, backgroundColor: '#1B5E20', height: 48, borderRadius: 14, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8, elevation: 2 },
+  navigateTextSmall: { color: '#fff', fontSize: 14, fontWeight: '800' },
+  emptyText: { textAlign: 'center', marginTop: 100, color: '#64748b', fontWeight: '700' }
 });
 
 export default CitizenTask;
