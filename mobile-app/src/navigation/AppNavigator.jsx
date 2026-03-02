@@ -34,6 +34,7 @@ import GuideScreen from '../pages/GuideScreen';
 import ProfileScreen from '../pages/ProfileScreen';
 import UserReportsScreen from '../pages/UserReportsScreen';
 import EditProfileScreen from '../pages/EditProfileScreen';
+import ArchiveCenter from '../pages/ArchiveCenter';
 import LiveMapScreen from '../pages/LiveMapScreen';
 import ScheduleScreen from '../pages/ScheduleScreen';
 import TrackScreen from '../pages/TrackScreen';
@@ -200,6 +201,8 @@ const AppNavigator = () => {
             headerTintColor: '#FFFFFF',
           }}
         />
+
+        <Stack.Screen name="ArchiveCenter" component={ArchiveCenter} options={{ headerShown: true, title: 'Archive Reports'}} />
         <Stack.Screen name="EditProfile" component={EditProfileScreen} options={{ headerShown: true, title: 'Edit Profile' }} />
         <Stack.Screen name="LiveMapScreen" component={LiveMapScreen} options={{ headerShown: false }} />
 
