@@ -1,10 +1,10 @@
 import React, { useRef, useCallback, useState, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, Platform, FlatList, Image, ActivityIndicator, RefreshControl, Alert, TouchableOpacity
+  View, Text, StyleSheet, Platform, FlatList, Image, ActivityIndicator, RefreshControl, Alert, TouchableOpacity, Modal
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
-import { Clock, MapPin, AlertTriangle, CheckCircle2, Truck, User, Camera, Calendar } from 'lucide-react-native';
+import { Clock, MapPin, AlertTriangle, CheckCircle2, Truck, User, Camera, Calendar, X } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { mobileService } from '../services/mobileService';
 
@@ -16,6 +16,9 @@ const UserReportsScreen = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [activeFilter, setActiveFilter] = useState('My Reports');
+  
+  // ✅ NEW: State to hold the currently selected image URL for full-screen viewing
+  const [selectedImage, setSelectedImage] = useState(null);
 
   const fetchReports = async () => {
     try {
@@ -27,10 +30,10 @@ const UserReportsScreen = () => {
       const result = await mobileService.getUserReportHistory(); 
       
       if (result.success) {
-        // ✅ Updated to check both reporter_id and user_id just in case
-        // ✅ Use reporter_id based on your SQL schema
+        // Updated to check both reporter_id and user_id just in case
+        // Use reporter_id based on your SQL schema
       const myReports = result.reports.filter(r => 
-        String(r.reporter_id) === String(user.user_id)
+        String(r.reporter_id) === String(user.user_id) || String(r.user_id) === String(user.user_id)
       );
         setReports(myReports);
       }
@@ -60,7 +63,6 @@ const UserReportsScreen = () => {
     }, [])
   );
 
-  // ✅ 2. FILTER BY TAB AND SORT NEWEST TO OLDEST
   const filteredReports = reports
     .filter(report => {
       if (activeFilter === 'My Reports') return true;
@@ -68,21 +70,23 @@ const UserReportsScreen = () => {
     })
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
-  const ReportCard = ({ item }) => {
+  const ReportCard = ({ item, onImagePress }) => {
     const displayIssue = item.issue_type === 'Other' ? item.issue_type_other : item.issue_type;
     
     // Formatting Timestamps helper
     const formatFullDate = (date) => {
         if (!date) return 'Processing...';
         const d = new Date(date);
+        if (isNaN(d.getTime())) return 'Processing...'; // Fallback for invalid dates
         return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) + 
                ' at ' + d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
     };
 
-    // ⏱️ NEW: Calculate total time taken to resolve
+    // ⏱️ Calculate total time taken to resolve
     const calculateTimeTaken = (start, end) => {
         if (!start || !end) return null;
         const diff = new Date(end) - new Date(start);
+        if (isNaN(diff) || diff < 0) return null;
         const hours = Math.floor(diff / (1000 * 60 * 60));
         const mins = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
         return hours > 0 ? `${hours}h ${mins}m` : `${mins} mins`;
@@ -94,6 +98,18 @@ const UserReportsScreen = () => {
       'Resolved': { color: '#10B981', bg: '#D1FAE5', icon: CheckCircle2 }
     };
     const currentStatus = statusStyles[item.status] || statusStyles['Pending'];
+
+    // 🛡️ Data Fallbacks: Uses direct schema IDs if the backend JOIN text is missing
+    const driverDisplay = item.driver_name && item.driver_name !== 'Assigning Driver...' 
+        ? item.driver_name 
+        : (item.assigned_team_id ? `Team Assigned (#${item.assigned_team_id})` : 'System User');
+        
+    const collectorDisplay = item.collector_name && item.collector_name !== 'Pending Collection'
+        ? item.collector_name 
+        : (item.photo_uploaded_by ? `Collector ID #${item.photo_uploaded_by}` : 'System User');
+
+    // 💡 Visibility Logic: Renders if resolved OR if the photo evidence already exists in DB
+    const isResolvedOrHasEvidence = item.status === 'Resolved' || item.resolved_photo_url || item.photo_uploaded_by;
 
     return (
       <View style={styles.reportCard}>
@@ -115,11 +131,17 @@ const UserReportsScreen = () => {
         {/* Initial Reported Photo (The "Before" image) */}
         <View style={styles.imageContainer}>
           <Text style={styles.imageLabel}>Reported Issue Photo:</Text>
-          <Image
-            source={{ uri: mobileService.getImageUrl(item.photo_evidence_url || item.photo_url) || 'https://via.placeholder.com/400x250' }}
-            style={styles.reportImage}
-            resizeMode="cover"
-          />
+          {/* ✅ FIXED: Wrapped Image in TouchableOpacity to trigger Full Screen Modal */}
+          <TouchableOpacity 
+            activeOpacity={0.8} 
+            onPress={() => onImagePress(mobileService.getImageUrl(item.photo_evidence_url || item.photo_url) || 'https://via.placeholder.com/400x250')}
+          >
+            <Image
+              source={{ uri: mobileService.getImageUrl(item.photo_evidence_url || item.photo_url) || 'https://via.placeholder.com/400x250' }}
+              style={styles.reportImage}
+              resizeMode="cover"
+            />
+          </TouchableOpacity>
         </View>
 
         <View style={styles.cardContent}>
@@ -135,36 +157,38 @@ const UserReportsScreen = () => {
             </View>
           ) : null}
 
-          {/* ✅ IN PROGRESS VIEW (Shows assigned driver) */}
+          {/* IN PROGRESS VIEW (Shows assigned driver) */}
           {item.status === 'In Progress' && (
             <View style={styles.progressBox}>
               <Text style={styles.progressTitle}>Dispatch Status</Text>
               <View style={styles.teamRow}>
                 <Truck size={16} color="#F59E0B" />
-                <Text style={styles.teamText}>Assigned Driver: <Text style={{fontWeight: '700'}}>{item.driver_name || 'En Route'}</Text></Text>
+                <Text style={styles.teamText}>Assigned Driver: <Text style={{fontWeight: '700'}}>{driverDisplay}</Text></Text>
               </View>
             </View>
           )}
 
-          {/* ✅ RESOLVED VIEW (Shows Correct After Photo, Driver, Collector & Timestamps) */}
-          {item.status === 'Resolved' && (
+          {/* RESOLVED VIEW (Now shows instantly if the Collector photo exists, bypassing 'status') */}
+          {isResolvedOrHasEvidence && (
             <View style={styles.resolvedBox}>
               <View style={styles.resolvedHeaderRow}>
                   <Text style={styles.resolvedTitle}>Resolution Details</Text>
                   <View style={styles.responseBadge}>
                     <Clock size={10} color="#059669" />
-                    <Text style={styles.resolvedTime}>Took: {calculateTimeTaken(item.created_at, item.resolved_at)}</Text>
+                    <Text style={styles.resolvedTime}>
+                      {item.resolved_at ? `Took: ${calculateTimeTaken(item.created_at, item.resolved_at)}` : 'Pending Time Sync'}
+                    </Text>
                   </View>
               </View>
               
               <View style={styles.teamRow}>
                 <Truck size={16} color="#10B981" />
-                <Text style={styles.teamText}>Driver: <Text style={{fontWeight: '700'}}>{item.driver_name || 'System User'}</Text></Text>
+                <Text style={styles.teamText}>Driver: <Text style={{fontWeight: '700'}}>{driverDisplay}</Text></Text>
               </View>
               
               <View style={styles.teamRow}>
                 <User size={16} color="#10B981" />
-                <Text style={styles.teamText}>Collector: <Text style={{fontWeight: '700'}}>{item.collector_name || 'System User'}</Text></Text>
+                <Text style={styles.teamText}>Collector: <Text style={{fontWeight: '700'}}>{collectorDisplay}</Text></Text>
               </View>
 
               <View style={styles.evidenceSection}>
@@ -173,18 +197,26 @@ const UserReportsScreen = () => {
                   <Text style={styles.evidenceLabel}>Cleared Area Evidence:</Text>
                 </View>
                 {item.resolved_photo_url ? (
-                    <Image
-                      source={{ uri: mobileService.getImageUrl(item.resolved_photo_url) }}
-                      style={styles.resolvedImage}
-                      resizeMode="cover"
-                    />
+                    /* ✅ FIXED: Wrapped Image in TouchableOpacity to trigger Full Screen Modal */
+                    <TouchableOpacity 
+                        activeOpacity={0.8} 
+                        onPress={() => onImagePress(mobileService.getImageUrl(item.resolved_photo_url))}
+                    >
+                        <Image
+                          source={{ uri: mobileService.getImageUrl(item.resolved_photo_url) }}
+                          style={styles.resolvedImage}
+                          resizeMode="cover"
+                        />
+                    </TouchableOpacity>
                 ) : (
                     <View style={styles.noPhotoBox}>
                         <ActivityIndicator color="#10B981" />
                         <Text style={styles.noPhotoText}>Photo processing...</Text>
                     </View>
                 )}
-                <Text style={styles.resolvedTimeBottom}>Resolved on {formatFullDate(item.resolved_at)}</Text>
+                <Text style={styles.resolvedTimeBottom}>
+                  {item.resolved_at ? `Resolved on ${formatFullDate(item.resolved_at)}` : 'Awaiting Driver Confirmation'}
+                </Text>
               </View>
             </View>
           )}
@@ -219,13 +251,35 @@ const UserReportsScreen = () => {
           ref={listRef}
           data={filteredReports}
           keyExtractor={(item) => item.report_id.toString()}
-          renderItem={({ item }) => <ReportCard item={item} />}
+          renderItem={({ item }) => <ReportCard item={item} onImagePress={setSelectedImage} />}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
           contentContainerStyle={[styles.listContainer, { paddingBottom: insets.bottom + 20 }]}
           showsVerticalScrollIndicator={false}
           ListEmptyComponent={<Text style={styles.emptyText}>You haven't made any reports yet.</Text>}
         />
       )}
+
+      {/* ✅ NEW: Full Screen Image Modal */}
+      <Modal
+        visible={!!selectedImage}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setSelectedImage(null)}
+      >
+        <View style={styles.modalBackground}>
+          <TouchableOpacity 
+            style={[styles.closeButton, { top: Platform.OS === 'ios' ? insets.top + 10 : 20 }]} 
+            onPress={() => setSelectedImage(null)}
+          >
+            <X size={30} color="#FFFFFF" />
+          </TouchableOpacity>
+          <Image 
+            source={{ uri: selectedImage }} 
+            style={styles.fullScreenImage} 
+            resizeMode="contain" 
+          />
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -272,7 +326,12 @@ const styles = StyleSheet.create({
   resolvedTimeBottom: { fontSize: 10, color: '#94a3b8', textAlign: 'right', marginTop: 8, fontStyle: 'italic' },
   noPhotoBox: { width: '100%', height: 100, backgroundColor: '#f1f5f9', borderRadius: 12, justifyContent: 'center', alignItems: 'center', gap: 8 },
   noPhotoText: { color: '#94a3b8', fontSize: 12, fontWeight: '600' },
-  emptyText: { textAlign: 'center', marginTop: 100, color: '#64748b', fontWeight: '700' }
+  emptyText: { textAlign: 'center', marginTop: 100, color: '#64748b', fontWeight: '700' },
+  
+  // Styles for the Full Screen Modal
+  modalBackground: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.95)', justifyContent: 'center', alignItems: 'center' },
+  closeButton: { position: 'absolute', right: 20, zIndex: 10, padding: 10, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 20 },
+  fullScreenImage: { width: '100%', height: '80%' }
 });
 
 export default UserReportsScreen;
