@@ -15,12 +15,11 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
-  Linking,
   Alert
 } from 'react-native';
 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import {
   User,
   Clock,
@@ -36,11 +35,11 @@ import { mobileService } from '../services/mobileService';
 const FeedScreen = () => {
   const insets = useSafeAreaInsets();
   const listRef = useRef(null);
+  const navigation = useNavigation();
 
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  // ✅ UPDATED: Set default tab to 'Pending'
   const [activeFilter, setActiveFilter] = useState('Pending');
 
   const fetchReports = async () => {
@@ -75,18 +74,21 @@ const FeedScreen = () => {
     }, [])
   );
 
-  const handleNavigate = (lat, lng, label) => {
-    if (!lat || !lng) {
+  // ✅ FIXED: Now we pass the entire 'item' object so the Map knows its status!
+  const handleNavigate = (item) => {
+    if (!item.latitude || !item.longitude) {
       Alert.alert("Error", "Location coordinates not available.");
       return;
     }
-    const scheme = Platform.select({ ios: 'maps:0,0?q=', android: 'geo:0,0?q=' });
-    const latLng = `${lat},${lng}`;
-    const url = Platform.select({
-      ios: `${scheme}${label}@${latLng}`,
-      android: `${scheme}${latLng}(${label})`
+    
+    navigation.navigate('LiveMapScreen', {
+      focusLocation: {
+        latitude: parseFloat(item.latitude),
+        longitude: parseFloat(item.longitude),
+      },
+      reportId: item.report_id,
+      targetReport: item // 👈 THIS IS THE CRITICAL LINE THAT TELLS THE MAP IT IS RESOLVED
     });
-    Linking.openURL(url);
   };
 
   const handleAttentionPress = async (reportId) => {
@@ -127,7 +129,6 @@ const FeedScreen = () => {
     }
   };
 
-  // ✅ UPDATED: Filters by status and then sorts newest to oldest
   const filteredReports = reports
     .filter(report => report.status === activeFilter)
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
@@ -225,7 +226,8 @@ const FeedScreen = () => {
 
           <TouchableOpacity 
             style={styles.navigateBtnSmall}
-            onPress={() => handleNavigate(item.latitude, item.longitude, displayIssue)}
+            // ✅ FIXED: Pass the full 'item' directly to the function
+            onPress={() => handleNavigate(item)}
           >
             <Navigation size={18} color="#fff" />
             <Text style={styles.navigateTextSmall}>Navigate</Text>
@@ -240,7 +242,6 @@ const FeedScreen = () => {
       <View style={[styles.headerSection, { paddingTop: Platform.OS === 'ios' ? insets.top : 15 }]}>
         <Text style={styles.headerTitle}>Community Feed</Text>
         <View style={styles.filterContainer}>
-          {/* ✅ UPDATED: Exact tabs requested */}
           {['Pending', 'In Progress', 'Resolved'].map((tab) => (
             <TouchableOpacity
               key={tab}
@@ -274,215 +275,42 @@ const FeedScreen = () => {
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#E3F3DF'
-  },
-  headerSection: {
-    backgroundColor: '#F6FBF6',
-    paddingHorizontal: 20,
-    paddingBottom: 15,
-    borderBottomLeftRadius: 25,
-    borderBottomRightRadius: 25,
-    elevation: 5
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: '900',
-    color: '#1B5E20',
-    marginBottom: 15
-  },
-  filterContainer: {
-    flexDirection: 'row',
-    backgroundColor: '#F1F5F9',
-    borderRadius: 15,
-    padding: 5
-  },
-  filterTab: {
-    flex: 1,
-    paddingVertical: 10,
-    alignItems: 'center',
-    borderRadius: 12
-  },
-  activeTab: {
-    backgroundColor: '#1B5E20'
-  },
-  filterTabText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#64748b'
-  },
-  activeTabText: {
-    color: '#fff'
-  },
-  listContainer: {
-    padding: 15
-  },
-  reportCard: {
-    backgroundColor: '#F6FBF6',
-    borderRadius: 25,
-    marginBottom: 20,
-    overflow: 'hidden',
-    elevation: 3
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9'
-  },
-  userInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10
-  },
-  avatarCircle: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: '#F8FAFC',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    overflow: 'hidden'
-  },
-  avatarImage: {
-    width: '100%',
-    height: '100%'
-  },
-  citizenNameText: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#1E293B'
-  },
-  timeInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4
-  },
-  dateText: {
-    fontSize: 11,
-    color: '#94a3b8',
-    fontWeight: '600'
-  },
-  reportImage: {
-    width: '100%',
-    height: 230,
-    backgroundColor: '#F1F5F9'
-  },
-  cardContent: {
-    padding: 15
-  },
-  issueRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8
-  },
-  issueTypeText: {
-    fontSize: 18,
-    fontWeight: '900',
-    color: '#0F172A',
-    flex: 1
-  },
-  statusBadgeSmall: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 20
-  },
-  statusTextSmall: {
-    fontSize: 10,
-    fontWeight: '800',
-    textTransform: 'uppercase'
-  },
-  locationRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    marginBottom: 12
-  },
-  locationText: {
-    fontSize: 13,
-    color: '#64748b',
-    fontWeight: '600'
-  },
-  descriptionBox: {
-    backgroundColor: '#F8FAFC',
-    padding: 12,
-    borderRadius: 15,
-    borderLeftWidth: 4,
-    borderLeftColor: '#CBD5E1'
-  },
-  descriptionLabel: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: '#475569',
-    marginBottom: 2,
-    textTransform: 'uppercase'
-  },
-  descriptionText: {
-    fontSize: 14,
-    color: '#334155',
-    lineHeight: 20
-  },
-  cardActionsRow: {
-    flexDirection: 'row',
-    padding: 15,
-    paddingTop: 0,
-    gap: 10
-  },
-  attentionBtn: {
-    flex: 1.3,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    height: 48,
-    borderRadius: 14,
-    borderWidth: 1.5,
-    borderColor: '#FEE2E2',
-    backgroundColor: '#FFF'
-  },
-  attentionBtnActive: {
-    backgroundColor: '#EF4444',
-    borderColor: '#EF4444'
-  },
-  attentionText: {
-    color: '#EF4444',
-    fontSize: 12,
-    fontWeight: '800'
-  },
-  attentionTextActive: {
-    color: '#FFF'
-  },
-  navigateBtnSmall: {
-    flex: 0.7,
-    backgroundColor: '#1B5E20',
-    height: 48,
-    borderRadius: 14,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 8,
-    elevation: 2
-  },
-  navigateTextSmall: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '800'
-  },
-  emptyText: {
-    textAlign: 'center',
-    marginTop: 100,
-    color: '#64748b',
-    fontWeight: '700'
-  }
+  container: { flex: 1, backgroundColor: '#E3F3DF' },
+  headerSection: { backgroundColor: '#F6FBF6', paddingHorizontal: 20, paddingBottom: 15, borderBottomLeftRadius: 25, borderBottomRightRadius: 25, elevation: 5 },
+  headerTitle: { fontSize: 24, fontWeight: '900', color: '#1B5E20', marginBottom: 15 },
+  filterContainer: { flexDirection: 'row', backgroundColor: '#F1F5F9', borderRadius: 15, padding: 5 },
+  filterTab: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 12 },
+  activeTab: { backgroundColor: '#1B5E20' },
+  filterTabText: { fontSize: 13, fontWeight: '700', color: '#64748b' },
+  activeTabText: { color: '#fff' },
+  listContainer: { padding: 15 },
+  reportCard: { backgroundColor: '#F6FBF6', borderRadius: 25, marginBottom: 20, overflow: 'hidden', elevation: 3 },
+  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 15, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
+  userInfo: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  avatarCircle: { width: 34, height: 34, borderRadius: 17, backgroundColor: '#F8FAFC', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0', overflow: 'hidden' },
+  avatarImage: { width: '100%', height: '100%' },
+  citizenNameText: { fontSize: 14, fontWeight: '800', color: '#1E293B' },
+  timeInfo: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  dateText: { fontSize: 11, color: '#94a3b8', fontWeight: '600' },
+  reportImage: { width: '100%', height: 230, backgroundColor: '#F1F5F9' },
+  cardContent: { padding: 15 },
+  issueRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  issueTypeText: { fontSize: 18, fontWeight: '900', color: '#0F172A', flex: 1 },
+  statusBadgeSmall: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
+  statusTextSmall: { fontSize: 10, fontWeight: '800', textTransform: 'uppercase' },
+  locationRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 12 },
+  locationText: { fontSize: 13, color: '#64748b', fontWeight: '600' },
+  descriptionBox: { backgroundColor: '#F8FAFC', padding: 12, borderRadius: 15, borderLeftWidth: 4, borderLeftColor: '#CBD5E1' },
+  descriptionLabel: { fontSize: 11, fontWeight: '800', color: '#475569', marginBottom: 2, textTransform: 'uppercase' },
+  descriptionText: { fontSize: 14, color: '#334155', lineHeight: 20 },
+  cardActionsRow: { flexDirection: 'row', padding: 15, paddingTop: 0, gap: 10 },
+  attentionBtn: { flex: 1.3, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, height: 48, borderRadius: 14, borderWidth: 1.5, borderColor: '#FEE2E2', backgroundColor: '#FFF' },
+  attentionBtnActive: { backgroundColor: '#EF4444', borderColor: '#EF4444' },
+  attentionText: { color: '#EF4444', fontSize: 12, fontWeight: '800' },
+  attentionTextActive: { color: '#FFF' },
+  navigateBtnSmall: { flex: 0.7, backgroundColor: '#1B5E20', height: 48, borderRadius: 14, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8, elevation: 2 },
+  navigateTextSmall: { color: '#fff', fontSize: 14, fontWeight: '800' },
+  emptyText: { textAlign: 'center', marginTop: 100, color: '#64748b', fontWeight: '700' }
 });
 
 export default FeedScreen;
