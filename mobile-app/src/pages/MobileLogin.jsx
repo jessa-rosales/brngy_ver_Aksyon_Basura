@@ -12,7 +12,6 @@ import {
   Animated,
   Dimensions,
   ActivityIndicator,
-  Alert,
   Modal 
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -32,18 +31,19 @@ import {
 } from 'lucide-react-native';
 import { mobileService } from '../services/mobileService';
 
+// ✅ IMPORT CUSTOM ALERT
+import CustomAlert from '../components/CustomAlert';
+
 const { width, height } = Dimensions.get('window');
 
 const MobileLogin = ({ navigation }) => {
   // --- HOOKS & BASIC STATES ---
-  // Setup for safe area (notches), toggle modes, and loading spinners
   const insets = useSafeAreaInsets();
   const [isSignUp, setIsSignUp] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showTermsModal, setShowTermsModal] = useState(false); 
   
   // --- INPUT STATES ---
-  // Stores user data for both registration and login forms
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [contactNumber, setContactNumber] = useState('');
@@ -52,13 +52,23 @@ const MobileLogin = ({ navigation }) => {
   const [confirmPassword, setConfirmPassword] = useState('');
   
   // --- UI STATES ---
-  // Controls checkboxes and password visibility
   const [rememberMe, setRememberMe] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [agreeToTerms, setAgreeToTerms] = useState(false);
 
+  // ✅ NEW: CUSTOM ALERT STATE
+  const [customAlert, setCustomAlert] = useState({ 
+    visible: false, 
+    title: '', 
+    message: '', 
+    type: 'info',
+    confirmText: 'OK',
+    onConfirm: null 
+  });
+
+  const closeAlert = () => setCustomAlert(prev => ({ ...prev, visible: false }));
+
   // --- ANIMATION LOGIC ---
-  // Handles the sliding movement of the Login/Sign Up toggle button
   const slideAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -71,7 +81,6 @@ const MobileLogin = ({ navigation }) => {
   }, [isSignUp]);
 
   // --- AUTO-CLEAN EFFECT ---
-  // Wipes all input fields clean when switching between Login and Sign Up
   useEffect(() => {
     resetFields();
   }, [isSignUp]);
@@ -84,7 +93,6 @@ const MobileLogin = ({ navigation }) => {
   const themeColor = '#1B5E20'; 
 
   // --- STATE RESET HELPER ---
-  // Function to return all form inputs to their empty state
   const resetFields = () => {
     setFirstName('');
     setLastName('');
@@ -97,10 +105,12 @@ const MobileLogin = ({ navigation }) => {
   };
 
   // --- AUTHENTICATION HANDLER ---
-  // Main function that talks to the backend for both Login and Registration
   const handleAuthAction = async () => {
     if (!email || !password) {
-      Alert.alert("Error", "Please fill in all fields");
+      setCustomAlert({
+        visible: true, title: "Missing Fields", message: "Please fill in all required fields.", type: "warning",
+        confirmText: "OK", onConfirm: closeAlert
+      });
       return;
     }
 
@@ -108,9 +118,34 @@ const MobileLogin = ({ navigation }) => {
 
     try {
       if (isSignUp) {
-        // Validation: Passwords & Terms
+        
+        // VALIDATION: Check if email ends with @gmail.com
+        if (!email.toLowerCase().endsWith('@gmail.com')) {
+          setCustomAlert({
+            visible: true, title: "Invalid Email", message: "Please use a valid @gmail.com email address to register.", type: "warning",
+            confirmText: "OK", onConfirm: closeAlert
+          });
+          setLoading(false);
+          return;
+        }
+
+        // VALIDATION: Check if phone number starts with 09 and is exactly 11 digits
+        const phoneRegex = /^09\d{9}$/;
+        if (!phoneRegex.test(contactNumber)) {
+          setCustomAlert({
+            visible: true, title: "Invalid Number", message: "Contact number must start with '09' and be exactly 11 digits long.", type: "warning",
+            confirmText: "OK", onConfirm: closeAlert
+          });
+          setLoading(false);
+          return;
+        }
+
+        // VALIDATION: Passwords & Terms
         if (password !== confirmPassword) {
-          Alert.alert("Error", "Passwords do not match");
+          setCustomAlert({
+            visible: true, title: "Password Mismatch", message: "Your passwords do not match. Please try again.", type: "danger",
+            confirmText: "OK", onConfirm: closeAlert
+          });
           setPassword('');
           setConfirmPassword('');
           setLoading(false);
@@ -118,7 +153,10 @@ const MobileLogin = ({ navigation }) => {
         }
 
         if (!agreeToTerms) {
-          Alert.alert("Terms & Conditions", "Please agree to the terms to continue.");
+          setCustomAlert({
+            visible: true, title: "Terms & Conditions", message: "Please agree to the Terms & Privacy Policy to continue.", type: "info",
+            confirmText: "OK", onConfirm: closeAlert
+          });
           setLoading(false);
           return;
         }
@@ -135,11 +173,29 @@ const MobileLogin = ({ navigation }) => {
         const data = await response.json();
 
         if (response.ok) {
-          Alert.alert("Success", "Account created! Please log in.", [
-            { text: "OK", onPress: () => { resetFields(); setIsSignUp(false); } }
-          ]);
+          setCustomAlert({
+            visible: true, title: "Success!", message: "Account created successfully! Please log in.", type: "success",
+            confirmText: "Login Now", 
+            onConfirm: () => { 
+              closeAlert(); 
+              resetFields(); 
+              setIsSignUp(false); 
+            }
+          });
         } else {
-          Alert.alert("Registration Failed", data.message || "Email already exists.");
+          // Duplicate Email Check handling
+          const errorMsg = data.message ? data.message.toLowerCase() : "";
+          if (errorMsg.includes('email') || errorMsg.includes('duplicate') || errorMsg.includes('exist')) {
+             setCustomAlert({
+               visible: true, title: "Email Taken", message: "This Gmail account already exists. Please use a different one.", type: "danger",
+               confirmText: "OK", onConfirm: closeAlert
+             });
+          } else {
+             setCustomAlert({
+               visible: true, title: "Registration Failed", message: data.message || "Account creation failed.", type: "danger",
+               confirmText: "OK", onConfirm: closeAlert
+             });
+          }
           setPassword('');
           setConfirmPassword('');
         }
@@ -150,7 +206,10 @@ const MobileLogin = ({ navigation }) => {
 
         if (response.ok) {
           if (data.user.status === 'Inactive') {
-            Alert.alert("Account Inactive", "Contact administrator.");
+            setCustomAlert({
+              visible: true, title: "Account Inactive", message: "Your account is currently inactive. Please contact the administrator.", type: "warning",
+              confirmText: "OK", onConfirm: closeAlert
+            });
             resetFields();
             setLoading(false);
             return;
@@ -161,16 +220,27 @@ const MobileLogin = ({ navigation }) => {
             case 'Driver': navigation.replace('DriverDashboard'); break;
             case 'Collector': navigation.replace('CollectorDashboard'); break;
             case 'Citizen': navigation.replace('Dashboard'); break;
-            default: Alert.alert("Access Denied", "Unauthorized role."); break;
+            default: 
+              setCustomAlert({
+                visible: true, title: "Access Denied", message: "Unauthorized role detected.", type: "danger",
+                confirmText: "OK", onConfirm: closeAlert
+              });
+              break;
           }
         } else {
-          Alert.alert("Login Failed", typeof data === 'string' ? data : data.message);
+          setCustomAlert({
+            visible: true, title: "Login Failed", message: typeof data === 'string' ? data : data.message, type: "danger",
+            confirmText: "OK", onConfirm: closeAlert
+          });
           setPassword('');
           setShowPassword(false);
         }
       }
     } catch (err) {
-      Alert.alert("Connection Error", "Check your internet or server status.");
+      setCustomAlert({
+        visible: true, title: "Connection Error", message: "Could not connect to the server. Please check your internet connection.", type: "danger",
+        confirmText: "OK", onConfirm: closeAlert
+      });
     } finally {
       setLoading(false);
     }
@@ -188,7 +258,6 @@ const MobileLogin = ({ navigation }) => {
         >
 
           {/* --- 1. BRANDING GROUP --- */}
-          {/* Logo and system titles */}
           <View style={styles.headerSection}>
             <View style={styles.logoWrapper}>
               <Image 
@@ -205,11 +274,9 @@ const MobileLogin = ({ navigation }) => {
           </View>
 
           {/* --- 2. MAIN AUTH CARD GROUP --- */}
-          {/* Container for toggles and form fields */}
           <View style={styles.loginCard}>
             
             {/* --- 2A. TOGGLE SWITCH GROUP --- */}
-            {/* Buttons to switch between Login and Sign Up mode */}
             <View style={styles.toggleContainer}>
               <View style={styles.toggleBackground}>
                 <Animated.View 
@@ -244,7 +311,6 @@ const MobileLogin = ({ navigation }) => {
 
             <View style={styles.formSection}>
               {/* --- 2B. MODE INDICATOR --- */}
-              {/* Icon and title showing the current form mode */}
               <View style={styles.modeIndicator}>
                 {isSignUp ? (
                   <UserPlus size={18} color={themeColor} />
@@ -257,7 +323,6 @@ const MobileLogin = ({ navigation }) => {
               </View>
 
               {/* --- 2C. FORM INPUT GROUP --- */}
-              {/* Actual text inputs for user information */}
               {isSignUp && (
                 <>
                   <View style={styles.inputContainer}>
@@ -283,10 +348,11 @@ const MobileLogin = ({ navigation }) => {
                   <View style={styles.inputContainer}>
                     <Phone size={18} color="#94a3b8" />
                     <TextInput 
-                      placeholder="Contact Number" 
+                      placeholder="Contact Number (e.g. 09XXXXXXXXX)" 
                       placeholderTextColor="#94a3b8" 
                       style={styles.textInput} 
                       keyboardType="phone-pad" 
+                      maxLength={11} 
                       value={contactNumber} 
                       onChangeText={setContactNumber} 
                     />
@@ -344,7 +410,6 @@ const MobileLogin = ({ navigation }) => {
               )}
 
               {/* --- 2D. POLICY & ACTIONS GROUP --- */}
-              {/* Checkboxes for Remember Me or Terms & Conditions */}
               {!isSignUp ? (
                 <View style={styles.actionRow}>
                   <TouchableOpacity 
@@ -390,7 +455,6 @@ const MobileLogin = ({ navigation }) => {
               )}
 
               {/* --- 2E. SUBMIT BUTTON GROUP --- */}
-              {/* Primary button that triggers the auth function */}
               <TouchableOpacity 
                 activeOpacity={0.9} 
                 disabled={loading} 
@@ -414,7 +478,6 @@ const MobileLogin = ({ navigation }) => {
               </TouchableOpacity>
 
               {/* --- 2F. SOCIAL AUTH GROUP --- */}
-              {/* Divider and Google Login option */}
               <View style={styles.dividerArea}>
                 <View style={styles.line} />
                 <Text style={styles.dividerText}>OR</Text>
@@ -434,7 +497,6 @@ const MobileLogin = ({ navigation }) => {
       </KeyboardAvoidingView>
 
       {/* --- 3. OVERLAY MODAL GROUP --- */}
-      {/* Pop-up window for reading terms and privacy rules */}
       <Modal 
         animationType="slide" 
         transparent={true} 
@@ -484,12 +546,22 @@ const MobileLogin = ({ navigation }) => {
           </View>
         </View>
       </Modal>
+
+      {/* ✅ NEW: CUSTOM ALERT RENDER */}
+      <CustomAlert 
+        visible={customAlert.visible}
+        title={customAlert.title}
+        message={customAlert.message}
+        type={customAlert.type}
+        confirmText={customAlert.confirmText}
+        onConfirm={customAlert.onConfirm || closeAlert}
+        onCancel={closeAlert}
+      />
     </View>
   );
 };
 
 // --- STYLING GROUP ---
-// Controls the visual appearance and layout of all components
 const styles = StyleSheet.create({
   container: { 
     flex: 1, 
