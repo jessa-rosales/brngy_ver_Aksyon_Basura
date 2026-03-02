@@ -254,40 +254,50 @@ const getActiveTrackingRoutes = async (req, res) => {
 };
 
 // FOR UserReportsScreen
+// FOR UserReportsScreen
+// C:\aksyon-basurav5\backend\src\controllers\mobileController.js
+
 const getAllReports = async (req, res) => {
     try {
         const query = `
             SELECT 
-                r.*, 
-                -- We alias reporter_id as user_id so the frontend doesn't break
+                r.*,
                 r.reporter_id AS user_id, 
                 CONCAT(reporter.first_name, ' ', reporter.last_name) AS reporter_name,
                 
-                -- 🚚 JOIN FOR DRIVER NAME (via assigned_team_id -> task_assignments)
-                COALESCE(CONCAT(d.first_name, ' ', d.last_name), 'Assigning Driver...') AS driver_name,
+                -- 🚚 JOIN: Driver Name
+                COALESCE(NULLIF(TRIM(CONCAT(driver.first_name, ' ', driver.last_name)), ''), 'Assigning Driver...') AS driver_name,
                 
-                -- 🧑‍🦯 JOIN FOR COLLECTOR NAME (via photo_uploaded_by -> users)
-                COALESCE(CONCAT(c.first_name, ' ', c.last_name), 'Pending Collection') AS collector_name,
-
-                -- 📸 EXPLICIT PHOTO NAMES
-                r.photo_evidence_url,
-                r.resolved_photo_url,
-                
-                -- ⏰ TIMESTAMPS
-                r.created_at,
-                r.resolved_at
-            FROM public.citizen_reports r
-            LEFT JOIN public.users reporter ON r.reporter_id = reporter.user_id 
-            LEFT JOIN public.task_assignments ta ON r.assigned_team_id = ta.task_id
-            LEFT JOIN public.users d ON ta.driver_id = d.user_id
-            -- ✅ THIS IS THE FIX: Joining on photo_uploaded_by to get the Collector
-            LEFT JOIN public.users c ON r.photo_uploaded_by = c.user_id 
+                -- 🧑‍🦯 JOIN: Collector Name (This is what was missing!)
+                COALESCE(NULLIF(TRIM(CONCAT(collector.first_name, ' ', collector.last_name)), ''), 'Pending Clearance') AS collector_name
+            FROM citizen_reports r
+            LEFT JOIN users reporter ON r.reporter_id = reporter.user_id
+            
+            -- Route to find Driver
+            LEFT JOIN task_assignments ta ON r.assigned_team_id = ta.task_id
+            LEFT JOIN users driver ON ta.driver_id = driver.user_id
+            
+            -- Route to find Collector who uploaded the photo
+            LEFT JOIN users collector ON r.photo_uploaded_by = collector.user_id
+            
+            WHERE r.is_archived = false
             ORDER BY r.created_at DESC;
         `;
+        
         const result = await pool.query(query);
+
+        // 🔍 This prints to your VS Code terminal so you can verify the backend is sending it!
+        if (result.rows.length > 0) {
+            console.log("MOBILE CONTROLLER SENDING:", {
+                id: result.rows[0].report_id,
+                collector: result.rows[0].collector_name,
+                photo: result.rows[0].resolved_photo_url
+            });
+        }
+
         res.status(200).json({ success: true, reports: result.rows });
     } catch (error) {
-        console.error("Get All Reports Error:", error);
+        console.error("Fetch User History reports error:", error);
         res.status(500).json({ success: false, message: 'Server Error' });
     }
 };
