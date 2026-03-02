@@ -254,50 +254,43 @@ const getActiveTrackingRoutes = async (req, res) => {
 };
 
 // FOR UserReportsScreen
-// FOR UserReportsScreen
-// C:\aksyon-basurav5\backend\src\controllers\mobileController.js
-
 const getAllReports = async (req, res) => {
+    const currentUserId = req.user ? req.user.id : null; 
+
     try {
         const query = `
             SELECT 
                 r.*,
+                -- ✅ ADDED: Extract Latitude and Longitude for Navigation!
+                ST_Y(r.location_coords::geometry) AS latitude,
+                ST_X(r.location_coords::geometry) AS longitude,
+                
                 r.reporter_id AS user_id, 
                 CONCAT(reporter.first_name, ' ', reporter.last_name) AS reporter_name,
+                reporter.profile_picture,
                 
-                -- 🚚 JOIN: Driver Name
                 COALESCE(NULLIF(TRIM(CONCAT(driver.first_name, ' ', driver.last_name)), ''), 'Assigning Driver...') AS driver_name,
-                
-                -- 🧑‍🦯 JOIN: Collector Name (This is what was missing!)
-                COALESCE(NULLIF(TRIM(CONCAT(collector.first_name, ' ', collector.last_name)), ''), 'Pending Clearance') AS collector_name
+                COALESCE(NULLIF(TRIM(CONCAT(collector.first_name, ' ', collector.last_name)), ''), 'Pending Clearance') AS collector_name,
+
+                (SELECT COUNT(*) FROM report_attention ra WHERE ra.report_id = r.report_id) AS attention_count,
+                CAST(EXISTS (
+                    SELECT 1 FROM report_attention 
+                    WHERE report_id = r.report_id AND user_id = $1
+                ) AS BOOLEAN) AS has_attended
+
             FROM citizen_reports r
             LEFT JOIN users reporter ON r.reporter_id = reporter.user_id
-            
-            -- Route to find Driver
             LEFT JOIN task_assignments ta ON r.assigned_team_id = ta.task_id
             LEFT JOIN users driver ON ta.driver_id = driver.user_id
-            
-            -- Route to find Collector who uploaded the photo
             LEFT JOIN users collector ON r.photo_uploaded_by = collector.user_id
-            
             WHERE r.is_archived = false
             ORDER BY r.created_at DESC;
         `;
         
-        const result = await pool.query(query);
-
-        // 🔍 This prints to your VS Code terminal so you can verify the backend is sending it!
-        if (result.rows.length > 0) {
-            console.log("MOBILE CONTROLLER SENDING:", {
-                id: result.rows[0].report_id,
-                collector: result.rows[0].collector_name,
-                photo: result.rows[0].resolved_photo_url
-            });
-        }
-
+        const result = await pool.query(query, [currentUserId]);
         res.status(200).json({ success: true, reports: result.rows });
     } catch (error) {
-        console.error("Fetch User History reports error:", error);
+        console.error("Fetch all reports error:", error);
         res.status(500).json({ success: false, message: 'Server Error' });
     }
 };
@@ -330,20 +323,41 @@ const archiveReport = async (req, res) => {
     }
 };
 
+// --- 2. GET ARCHIVED REPORTS (For Archive Center) ---
 const getArchivedReports = async (req, res) => {
+    const currentUserId = req.user ? req.user.id : null; 
+
     try {
         const query = `
             SELECT 
                 r.*,
+                -- ✅ ADDED: Extract Latitude and Longitude for Navigation!
+                ST_Y(r.location_coords::geometry) AS latitude,
+                ST_X(r.location_coords::geometry) AS longitude,
+                
                 r.reporter_id AS user_id, 
-                CONCAT(reporter.first_name, ' ', reporter.last_name) AS reporter_name
+                CONCAT(reporter.first_name, ' ', reporter.last_name) AS reporter_name,
+                reporter.profile_picture,
+                
+                COALESCE(NULLIF(TRIM(CONCAT(driver.first_name, ' ', driver.last_name)), ''), 'Assigning Driver...') AS driver_name,
+                COALESCE(NULLIF(TRIM(CONCAT(collector.first_name, ' ', collector.last_name)), ''), 'Pending Clearance') AS collector_name,
+
+                (SELECT COUNT(*) FROM report_attention ra WHERE ra.report_id = r.report_id) AS attention_count,
+                CAST(EXISTS (
+                    SELECT 1 FROM report_attention 
+                    WHERE report_id = r.report_id AND user_id = $1
+                ) AS BOOLEAN) AS has_attended
+
             FROM citizen_reports r
             LEFT JOIN users reporter ON r.reporter_id = reporter.user_id
+            LEFT JOIN task_assignments ta ON r.assigned_team_id = ta.task_id
+            LEFT JOIN users driver ON ta.driver_id = driver.user_id
+            LEFT JOIN users collector ON r.photo_uploaded_by = collector.user_id
             WHERE r.is_archived = true
-            ORDER BY r.updated_at DESC;
+            ORDER BY r.created_at DESC;
         `;
         
-        const result = await pool.query(query);
+        const result = await pool.query(query, [currentUserId]);
         res.status(200).json({ success: true, reports: result.rows });
     } catch (error) {
         console.error("Fetch Archived reports error:", error);
