@@ -359,6 +359,8 @@ toggleAttention: async (reportId, userId) => {
     }
   },
 
+
+//For MyHistory in the Profile Screen
   getUserReportHistory: async () => {
     try {
         const token = await AsyncStorage.getItem('token');
@@ -376,6 +378,44 @@ toggleAttention: async (reportId, userId) => {
         return { success: false, reports: [] };
     }
 },
+
+archiveReport: async (reportId) => {
+    try {
+      // Get the token securely
+      let token = await AsyncStorage.getItem('userToken'); 
+      if (!token) {
+        token = await AsyncStorage.getItem('token'); 
+      }
+      
+      const response = await fetch(`${API_URL}/mobile/archive-report`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}` 
+        },
+        body: JSON.stringify({ report_id: reportId })
+      });
+
+      return await response.json();
+      
+    } catch (error) {
+      console.error("Archive Report Service Error:", error);
+      return { success: false, message: 'Network error' };
+    }
+  },
+
+  getArchivedReports: async () => {
+    try {
+      let token = await AsyncStorage.getItem('userToken') || await AsyncStorage.getItem('token'); 
+      const response = await fetch(`${API_URL}/mobile/archived-reports`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      return await response.json();
+    } catch (error) {
+      console.error("Archived Reports Service Error:", error);
+      return { success: false, message: 'Network error' };
+    }
+  },
   
   // Unified image URL handler
  /*
