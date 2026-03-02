@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   View, Text, StyleSheet, TouchableOpacity, 
   Image as RNImage, 
-  Alert, ActivityIndicator, Platform, TextInput 
+  ActivityIndicator, Platform, TextInput 
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -12,6 +12,8 @@ import { Camera, Calendar, User, Mail, Save } from 'lucide-react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { LinearGradient } from 'expo-linear-gradient';
 import { mobileService } from '../services/mobileService';
+
+import CustomAlert from '../components/CustomAlert';
 
 const EditProfileScreen = ({ navigation }) => {
   const [loading, setLoading] = useState(false);
@@ -24,6 +26,18 @@ const EditProfileScreen = ({ navigation }) => {
     firstName: '', lastName: '', email: '', phone: '',
     gender: '', birthday: null, address: '', profile_picture: null,
   });
+
+  const [customAlert, setCustomAlert] = useState({ 
+    visible: false, 
+    title: '', 
+    message: '', 
+    type: 'info',
+    confirmText: 'OK',
+    cancelText: 'Close',
+    onConfirm: null
+  });
+
+  const closeAlert = () => setCustomAlert(prev => ({ ...prev, visible: false }));
 
   useEffect(() => { loadCurrentData(); }, []);
 
@@ -71,12 +85,28 @@ const EditProfileScreen = ({ navigation }) => {
           profile_picture: mobileService.getImageUrl(data.user.profile_picture) 
         }));
       }
-    } catch (e) { Alert.alert("Error", "Failed to upload photo."); }
+    } catch (e) { 
+      setCustomAlert({
+        visible: true,
+        title: "Upload Error",
+        message: "Failed to upload photo. Please try again.",
+        type: "danger",
+        confirmText: "OK",
+        onConfirm: closeAlert
+      });
+    }
   };
 
   const handleSave = async () => {
     if (!formData.phone.trim()) {
-      Alert.alert("Required", "Phone number is required.");
+      setCustomAlert({
+        visible: true,
+        title: "Required Field",
+        message: "Phone number is required.",
+        type: "warning",
+        confirmText: "OK",
+        onConfirm: closeAlert
+      });
       return;
     }
 
@@ -94,12 +124,36 @@ const EditProfileScreen = ({ navigation }) => {
 
       if (response.ok) {
         await AsyncStorage.setItem('userProfile', JSON.stringify(result));
-        Alert.alert("Success", "Profile updated!", [{ text: "OK", onPress: () => navigation.goBack() }]);
+        setCustomAlert({
+          visible: true,
+          title: "Success",
+          message: "Profile updated successfully!",
+          type: "success",
+          confirmText: "OK",
+          onConfirm: () => {
+            closeAlert();
+            navigation.goBack();
+          }
+        });
       } else {
-        Alert.alert("Error", result.message || "Update failed");
+        setCustomAlert({
+          visible: true,
+          title: "Update Failed",
+          message: result.message || "Something went wrong.",
+          type: "danger",
+          confirmText: "OK",
+          onConfirm: closeAlert
+        });
       }
     } catch (error) {
-      Alert.alert("Error", "Connection failed.");
+      setCustomAlert({
+        visible: true,
+        title: "Connection Error",
+        message: "Failed to connect to the server.",
+        type: "danger",
+        confirmText: "OK",
+        onConfirm: closeAlert
+      });
     } finally { setLoading(false); }
   };
 
@@ -108,7 +162,8 @@ const EditProfileScreen = ({ navigation }) => {
     if (status !== 'granted') return;
 
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      // ✅ FIXED: Using the new array format to resolve the Expo deprecation warning
+      mediaTypes: ['images'], 
       allowsEditing: true,
       aspect: [1, 1],
       quality: 0.5,
@@ -209,6 +264,18 @@ const EditProfileScreen = ({ navigation }) => {
           </TouchableOpacity>
         </View>
       </KeyboardAwareScrollView>
+
+      <CustomAlert 
+        visible={customAlert.visible}
+        title={customAlert.title}
+        message={customAlert.message}
+        type={customAlert.type}
+        confirmText={customAlert.confirmText}
+        cancelText={customAlert.cancelText}
+        onConfirm={customAlert.onConfirm || closeAlert}
+        onCancel={closeAlert}
+      />
+
     </View>
   );
 };

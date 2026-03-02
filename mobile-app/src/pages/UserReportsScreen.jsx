@@ -1,12 +1,14 @@
 import React, { useRef, useCallback, useState, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, Platform, FlatList, Image, ActivityIndicator, RefreshControl, Alert, TouchableOpacity, Modal
+  View, Text, StyleSheet, Platform, FlatList, Image, ActivityIndicator, RefreshControl, TouchableOpacity, Modal
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
-import { Clock, MapPin, AlertTriangle, CheckCircle2, Truck, User, Camera, Calendar, X } from 'lucide-react-native';
+import { Clock, MapPin, AlertTriangle, CheckCircle2, Truck, User, Camera, Calendar, X, MoreVertical, Archive } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { mobileService } from '../services/mobileService';
+
+import CustomAlert from '../components/CustomAlert';
 
 const UserReportsScreen = () => {
   const insets = useSafeAreaInsets();
@@ -16,9 +18,14 @@ const UserReportsScreen = () => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [activeFilter, setActiveFilter] = useState('My Reports');
-  
-  // ✅ NEW: State to hold the currently selected image URL for full-screen viewing
   const [selectedImage, setSelectedImage] = useState(null);
+
+  // Custom Alert State
+  const [customAlert, setCustomAlert] = useState({ 
+    visible: false, title: '', message: '', type: 'info', 
+    confirmText: 'OK', cancelText: 'Close', onConfirm: null, onCancel: null 
+  });
+  const closeAlert = () => setCustomAlert(prev => ({ ...prev, visible: false }));
 
   const fetchReports = async () => {
     try {
@@ -26,15 +33,12 @@ const UserReportsScreen = () => {
       if (!userData) return;
       const user = JSON.parse(userData);
 
-      // Using the new service function we discussed
       const result = await mobileService.getUserReportHistory(); 
       
       if (result.success) {
-        // Updated to check both reporter_id and user_id just in case
-        // Use reporter_id based on your SQL schema
-      const myReports = result.reports.filter(r => 
-        String(r.reporter_id) === String(user.user_id) || String(r.user_id) === String(user.user_id)
-      );
+        const myReports = result.reports.filter(r => 
+          String(r.reporter_id) === String(user.user_id) || String(r.user_id) === String(user.user_id)
+        );
         setReports(myReports);
       }
     } catch (error) {
@@ -45,9 +49,7 @@ const UserReportsScreen = () => {
     }
   };
 
-  useEffect(() => {
-    fetchReports();
-  }, []);
+  useEffect(() => { fetchReports(); }, []);
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -63,6 +65,29 @@ const UserReportsScreen = () => {
     }, [])
   );
 
+  // ✅ NEW: Process Archive function 
+  const processArchive = async (reportId) => {
+    try {
+      const result = await mobileService.archiveReport(reportId);
+      if (result.success) {
+        setCustomAlert({
+          visible: true, title: "Success", message: "Report has been archived.", type: "success",
+          confirmText: "OK", onConfirm: () => { closeAlert(); fetchReports(); }
+        });
+      } else {
+        setCustomAlert({
+          visible: true, title: "Error", message: "Failed to archive report.", type: "danger",
+          confirmText: "OK", onConfirm: closeAlert
+        });
+      }
+    } catch (error) {
+      setCustomAlert({
+        visible: true, title: "Network Error", message: "Could not connect to server.", type: "danger",
+        confirmText: "OK", onConfirm: closeAlert
+      });
+    }
+  };
+
   const filteredReports = reports
     .filter(report => {
       if (activeFilter === 'My Reports') return true;
@@ -73,16 +98,17 @@ const UserReportsScreen = () => {
   const ReportCard = ({ item, onImagePress }) => {
     const displayIssue = item.issue_type === 'Other' ? item.issue_type_other : item.issue_type;
     
-    // Formatting Timestamps helper
+    // ✅ NEW: Local state to control the 3-dots popup menu
+    const [menuVisible, setMenuVisible] = useState(false);
+    
     const formatFullDate = (date) => {
         if (!date) return 'Processing...';
         const d = new Date(date);
-        if (isNaN(d.getTime())) return 'Processing...'; // Fallback for invalid dates
+        if (isNaN(d.getTime())) return 'Processing...';
         return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) + 
                ' at ' + d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
     };
 
-    // ⏱️ Calculate total time taken to resolve
     const calculateTimeTaken = (start, end) => {
         if (!start || !end) return null;
         const diff = new Date(end) - new Date(start);
@@ -99,7 +125,6 @@ const UserReportsScreen = () => {
     };
     const currentStatus = statusStyles[item.status] || statusStyles['Pending'];
 
-    // 🛡️ Data Fallbacks: Uses direct schema IDs if the backend JOIN text is missing
     const driverDisplay = item.driver_name && item.driver_name !== 'Assigning Driver...' 
         ? item.driver_name 
         : (item.assigned_team_id ? `Team Assigned (#${item.assigned_team_id})` : 'System User');
@@ -108,30 +133,66 @@ const UserReportsScreen = () => {
         ? item.collector_name 
         : (item.photo_uploaded_by ? `Collector ID #${item.photo_uploaded_by}` : 'System User');
 
-    // 💡 Visibility Logic: Renders if resolved OR if the photo evidence already exists in DB
     const isResolvedOrHasEvidence = item.status === 'Resolved' || item.resolved_photo_url || item.photo_uploaded_by;
+
+    // ✅ NEW: Trigger confirmation alert before archiving
+    const handleArchiveClick = () => {
+      setMenuVisible(false);
+      setCustomAlert({
+        visible: true,
+        title: "Archive Report",
+        message: "Are you sure you want to move this report to the archives?",
+        type: "warning",
+        confirmText: "Yes, Archive",
+        cancelText: "Cancel",
+        onConfirm: () => {
+          closeAlert();
+          processArchive(item.report_id);
+        }
+      });
+    };
 
     return (
       <View style={styles.reportCard}>
         {/* Header */}
         <View style={styles.cardHeader}>
           <View style={styles.issueRow}>
-            <Text style={styles.issueTypeText}>{displayIssue}</Text>
-            <View style={[styles.statusBadgeSmall, { backgroundColor: currentStatus.bg }]}>
-              <currentStatus.icon size={12} color={currentStatus.color} />
-              <Text style={[styles.statusTextSmall, { color: currentStatus.color }]}>{item.status}</Text>
+            <View style={{flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1}}>
+              <Text style={styles.issueTypeText}>{displayIssue}</Text>
+              <View style={[styles.statusBadgeSmall, { backgroundColor: currentStatus.bg }]}>
+                <currentStatus.icon size={12} color={currentStatus.color} />
+                <Text style={[styles.statusTextSmall, { color: currentStatus.color }]}>{item.status}</Text>
+              </View>
             </View>
+            
+            {/* ✅ NEW: 3 Dots Icon for Menu */}
+            <TouchableOpacity 
+              style={{ padding: 4 }} 
+              onPress={() => setMenuVisible(!menuVisible)}
+            >
+              <MoreVertical size={20} color="#64748b" />
+            </TouchableOpacity>
           </View>
+
+          {/* ✅ NEW: Popup Dropdown Menu for Archive */}
+          {menuVisible && (
+            <View style={styles.dropdownMenu}>
+              <TouchableOpacity style={styles.dropdownItem} onPress={handleArchiveClick}>
+                <Archive size={16} color="#EF4444" />
+                <Text style={styles.dropdownItemText}>Archive</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
           <View style={styles.timeInfo}>
             <Calendar size={12} color="#94a3b8" />
             <Text style={styles.dateText}>Reported: {formatFullDate(item.created_at)}</Text>
           </View>
         </View>
 
-        {/* Initial Reported Photo (The "Before" image) */}
+        {/* Initial Reported Photo */}
         <View style={styles.imageContainer}>
           <Text style={styles.imageLabel}>Reported Issue Photo:</Text>
-          {/* ✅ FIXED: Wrapped Image in TouchableOpacity to trigger Full Screen Modal */}
           <TouchableOpacity 
             activeOpacity={0.8} 
             onPress={() => onImagePress(mobileService.getImageUrl(item.photo_evidence_url || item.photo_url) || 'https://via.placeholder.com/400x250')}
@@ -157,7 +218,7 @@ const UserReportsScreen = () => {
             </View>
           ) : null}
 
-          {/* IN PROGRESS VIEW (Shows assigned driver) */}
+          {/* IN PROGRESS VIEW */}
           {item.status === 'In Progress' && (
             <View style={styles.progressBox}>
               <Text style={styles.progressTitle}>Dispatch Status</Text>
@@ -168,7 +229,7 @@ const UserReportsScreen = () => {
             </View>
           )}
 
-          {/* RESOLVED VIEW (Now shows instantly if the Collector photo exists, bypassing 'status') */}
+          {/* RESOLVED VIEW */}
           {isResolvedOrHasEvidence && (
             <View style={styles.resolvedBox}>
               <View style={styles.resolvedHeaderRow}>
@@ -197,7 +258,6 @@ const UserReportsScreen = () => {
                   <Text style={styles.evidenceLabel}>Cleared Area Evidence:</Text>
                 </View>
                 {item.resolved_photo_url ? (
-                    /* ✅ FIXED: Wrapped Image in TouchableOpacity to trigger Full Screen Modal */
                     <TouchableOpacity 
                         activeOpacity={0.8} 
                         onPress={() => onImagePress(mobileService.getImageUrl(item.resolved_photo_url))}
@@ -259,7 +319,7 @@ const UserReportsScreen = () => {
         />
       )}
 
-      {/* ✅ NEW: Full Screen Image Modal */}
+      {/* Full Screen Image Modal */}
       <Modal
         visible={!!selectedImage}
         transparent={true}
@@ -280,6 +340,18 @@ const UserReportsScreen = () => {
           />
         </View>
       </Modal>
+
+      {/* Custom Alert Overlay */}
+      <CustomAlert 
+        visible={customAlert.visible}
+        title={customAlert.title}
+        message={customAlert.message}
+        type={customAlert.type}
+        confirmText={customAlert.confirmText}
+        cancelText={customAlert.cancelText}
+        onConfirm={customAlert.onConfirm || closeAlert}
+        onCancel={closeAlert}
+      />
     </View>
   );
 };
@@ -294,12 +366,41 @@ const styles = StyleSheet.create({
   filterTabText: { fontSize: 11, fontWeight: '700', color: '#64748b' },
   activeTabText: { color: '#fff' },
   listContainer: { padding: 15 },
-  reportCard: { backgroundColor: '#F6FBF6', borderRadius: 25, marginBottom: 20, overflow: 'hidden', elevation: 3 },
-  cardHeader: { padding: 15, borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
-  issueRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-  issueTypeText: { fontSize: 18, fontWeight: '900', color: '#0F172A', flex: 1 },
+  reportCard: { backgroundColor: '#F6FBF6', borderRadius: 25, marginBottom: 20, elevation: 3 },
+  cardHeader: { padding: 15, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', position: 'relative' },
+  issueRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, zIndex: 1 },
+  issueTypeText: { fontSize: 18, fontWeight: '900', color: '#0F172A' },
   statusBadgeSmall: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
   statusTextSmall: { fontSize: 10, fontWeight: '800', textTransform: 'uppercase' },
+  
+  // ✅ NEW: Styles for the Dropdown Menu
+  dropdownMenu: {
+    position: 'absolute',
+    top: 45,
+    right: 15,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 5,
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    zIndex: 100, // Ensures it appears above other elements
+  },
+  dropdownItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 15,
+    gap: 8,
+  },
+  dropdownItemText: {
+    color: '#EF4444',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+
   timeInfo: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   dateText: { fontSize: 11, color: '#94a3b8', fontWeight: '600' },
   imageContainer: { paddingHorizontal: 15, paddingTop: 10 },
@@ -327,8 +428,6 @@ const styles = StyleSheet.create({
   noPhotoBox: { width: '100%', height: 100, backgroundColor: '#f1f5f9', borderRadius: 12, justifyContent: 'center', alignItems: 'center', gap: 8 },
   noPhotoText: { color: '#94a3b8', fontSize: 12, fontWeight: '600' },
   emptyText: { textAlign: 'center', marginTop: 100, color: '#64748b', fontWeight: '700' },
-  
-  // Styles for the Full Screen Modal
   modalBackground: { flex: 1, backgroundColor: 'rgba(0, 0, 0, 0.95)', justifyContent: 'center', alignItems: 'center' },
   closeButton: { position: 'absolute', right: 20, zIndex: 10, padding: 10, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 20 },
   fullScreenImage: { width: '100%', height: '80%' }

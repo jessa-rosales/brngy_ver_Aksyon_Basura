@@ -310,7 +310,7 @@ const ScheduleScreen = () => {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F9FAF9' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  header: { paddingHorizontal: 20, paddingBottom: 25, borderBottomLeftRadius: 30, borderBottomRightRadius: 30 },
+  header: { paddingHorizontal: 20, paddingBottom: 25, marginTop: -50, borderBottomLeftRadius: 30, borderBottomRightRadius: 30 },
   headerContent: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
   headerTitle: { fontSize: 24, fontWeight: '900', color: '#fff' },
   headerSub: { fontSize: 13, color: '#E8F5E9', opacity: 0.8 },

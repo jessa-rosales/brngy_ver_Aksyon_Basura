@@ -25,12 +25,12 @@ import {
   ShieldCheck,
   History,
   Info,
-  Calendar // Added Calendar icon
+  Calendar,
+  Archive // ✅ ADDED Archive Icon
 } from 'lucide-react-native';
 
-
-// Import your mobile service for the logout function
 import { mobileService } from '../services/mobileService';
+import CustomAlert from '../components/CustomAlert';
 
 const ProfileScreen = ({ navigation }) => {
   const insets = useSafeAreaInsets();
@@ -39,6 +39,8 @@ const ProfileScreen = ({ navigation }) => {
   // --- STATE MANAGEMENT ---
   const [userData, setUserData] = useState(null);
   const [loading, setLoading] = useState(true);
+  
+  const [logoutModalVisible, setLogoutModalVisible] = useState(false);
 
   // --- DATA LOADING LOGIC ---
   const loadUserProfile = async () => {
@@ -55,7 +57,6 @@ const ProfileScreen = ({ navigation }) => {
           phone: parsed.contact_number || 'No contact number', 
           address: parsed.address || 'No address provided',
           
-          // --- UPDATED ROLE LOGIC ---
           role: parsed.role === 'Admin' ? 'Administrator' : 
                 parsed.role === 'Driver' ? 'Verified Driver' : 
                 parsed.role === 'Collector' ? 'Verified Collector' : 'Verified Citizen',
@@ -70,7 +71,6 @@ const ProfileScreen = ({ navigation }) => {
     }
   };
 
-  // Refresh data every time the screen comes into view
   useFocusEffect(
     useCallback(() => {
       loadUserProfile();
@@ -85,29 +85,22 @@ const ProfileScreen = ({ navigation }) => {
   );
 
   // --- LOGOUT LOGIC ---
-  const handleLogout = () => {
-    Alert.alert("Sign Out", "Are you sure you want to exit?", [
-      { text: "Cancel", style: "cancel" },
-      { 
-        text: "Logout", 
-        style: "destructive", 
-        onPress: async () => {
-          try {
-            // 1. Clear AsyncStorage via mobileService
-            await mobileService.logout(); 
+  const handleLogoutPress = () => {
+    setLogoutModalVisible(true);
+  };
 
-            // 2. Reset navigation to the 'Login' route defined in AppNavigator.jsx
-            navigation.reset({
-              index: 0,
-              routes: [{ name: 'Login' }], 
-            });
-          } catch (error) {
-            console.error("Logout Error:", error);
-            Alert.alert("Error", "Sign out failed. Please try again.");
-          }
-        } 
-      }
-    ]);
+  const executeLogout = async () => {
+    setLogoutModalVisible(false);
+    try {
+      await mobileService.logout(); 
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'Login' }], 
+      });
+    } catch (error) {
+      console.error("Logout Error:", error);
+      Alert.alert("Error", "Sign out failed. Please try again.");
+    }
   };
 
   // --- HELPER COMPONENT ---
@@ -143,9 +136,7 @@ const ProfileScreen = ({ navigation }) => {
       <ScrollView
         ref={scrollRef}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ 
-          paddingBottom: insets.bottom + 40 
-        }}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 40 }}
       >
         <LinearGradient
           colors={['#1BC774', '#1B5E20']}
@@ -193,15 +184,12 @@ const ProfileScreen = ({ navigation }) => {
               onPress={() => navigation.navigate('UserReports')}
             />
 
-            {/* CONDITIONAL SCHEDULE BUTTON FOR DRIVER/COLLECTOR */}
-            {/* CONDITIONAL SCHEDULE BUTTON FOR DRIVER/COLLECTOR */}
             {(userData?.role === 'Verified Driver' || userData?.role === 'Verified Collector') && (
                 <ActionRow 
                     icon={Calendar} 
                     label="My Schedule" 
                     subLabel="View your assigned shifts"
                     onPress={() => {
-                        // Updated from Alert to navigate
                         navigation.navigate('Schedule'); 
                     }} 
                 />
@@ -213,11 +201,19 @@ const ProfileScreen = ({ navigation }) => {
               onPress={() => navigation.navigate('EditProfile')} 
             />
 
+            {/* ✅ NEW: Archive Center Button */}
+            <ActionRow 
+              icon={Archive} 
+              label="Archive Center" 
+              subLabel="View previously archived reports"
+              onPress={() => navigation.navigate('ArchiveCenter')} 
+            />
+
              <ActionRow icon={Info} label="App Information" onPress={() => {}} isLast />
           </View>
 
           {/* LOGOUT BUTTON */}
-          <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
+          <TouchableOpacity style={styles.logoutBtn} onPress={handleLogoutPress}>
             <LogOut size={20} color="#EF4444" />
             <Text style={styles.logoutText}>Sign Out</Text>
           </TouchableOpacity>
@@ -225,144 +221,43 @@ const ProfileScreen = ({ navigation }) => {
           <Text style={styles.versionLabel}>Aksyon Basura • 1.0.0</Text>
         </View>
       </ScrollView>
+
+      {/* CUSTOM ALERT OVERLAY */}
+      <CustomAlert 
+        visible={logoutModalVisible}
+        title="Sign Out"
+        message="Are you sure you want to log out of your account?"
+        type="danger"
+        confirmText="Yes, Sign Out"
+        cancelText="Cancel"
+        onConfirm={executeLogout}
+        onCancel={() => setLogoutModalVisible(false)}
+      />
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { 
-    flex: 1, 
-    backgroundColor: '#E3F3DF' 
-  },
-  center: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  topSection: {
-    paddingBottom: 20,
-    alignItems: 'center',
-    borderBottomLeftRadius: 30,
-    borderBottomRightRadius: 30,
-    elevation: 8,
-  },
-  avatarGlow: {
-    position: 'relative',
-    marginBottom: 10,
-    padding: 3,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    borderRadius: 50,
-  },
-  avatarMain: {
-    width: 74,
-    height: 74,
-    borderRadius: 37,
-    backgroundColor: '#fff',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  verifiedBadge: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    backgroundColor: '#3b82f6',
-    borderRadius: 10,
-    padding: 4,
-    borderWidth: 2,
-    borderColor: '#1B5E20',
-  },
-  headerName: {
-    fontSize: 20,
-    fontWeight: '900',
-    color: '#fff',
-  },
-  headerRole: {
-    fontSize: 11,
-    color: '#E3F3DF',
-    fontWeight: '700',
-    marginTop: 2,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  body: {
-    paddingHorizontal: 20,
-    marginTop: -5,
-  },
-  sectionTitle: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#1B5E20',
-    marginBottom: 8,
-    marginLeft: 10,
-    marginTop: 20,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    opacity: 0.6,
-  },
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 18,
-    paddingHorizontal: 15,
-    elevation: 4,
-    shadowColor: '#1B5E20',
-    shadowOpacity: 0.08,
-    shadowRadius: 15,
-  },
-  actionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 14,
-  },
-  rowBorder: {
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-  },
-  actionIconBg: {
-    width: 38,
-    height: 38,
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 15,
-  },
-  actionTextContainer: {
-    flex: 1,
-  },
-  actionLabel: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#334155',
-  },
-  actionSubLabel: {
-    fontSize: 11,
-    color: '#64748b',
-    marginTop: 1,
-    fontWeight: '500',
-  },
-  logoutBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#fff',
-    marginTop: 25,
-    paddingVertical: 14,
-    borderRadius: 18,
-    gap: 10,
-    borderWidth: 1,
-    borderColor: '#FEE2E2',
-  },
-  logoutText: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#EF4444',
-  },
-  versionLabel: {
-    textAlign: 'center',
-    color: '#1B5E20',
-    fontSize: 10,
-    marginTop: 25,
-    fontWeight: '700',
-    opacity: 0.4,
-  },
+  container: { flex: 1, backgroundColor: '#E3F3DF' },
+  center: { justifyContent: 'center', alignItems: 'center' },
+  topSection: { paddingBottom: 20, alignItems: 'center', borderBottomLeftRadius: 30, borderBottomRightRadius: 30, elevation: 8 },
+  avatarGlow: { position: 'relative', marginBottom: 10, padding: 3, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 50 },
+  avatarMain: { width: 74, height: 74, borderRadius: 37, backgroundColor: '#fff', justifyContent: 'center', alignItems: 'center' },
+  verifiedBadge: { position: 'absolute', bottom: 0, right: 0, backgroundColor: '#3b82f6', borderRadius: 10, padding: 4, borderWidth: 2, borderColor: '#1B5E20' },
+  headerName: { fontSize: 20, fontWeight: '900', color: '#fff' },
+  headerRole: { fontSize: 11, color: '#E3F3DF', fontWeight: '700', marginTop: 2, textTransform: 'uppercase', letterSpacing: 1 },
+  body: { paddingHorizontal: 20, marginTop: -5 },
+  sectionTitle: { fontSize: 12, fontWeight: '800', color: '#1B5E20', marginBottom: 8, marginLeft: 10, marginTop: 20, textTransform: 'uppercase', letterSpacing: 1, opacity: 0.6 },
+  card: { backgroundColor: '#fff', borderRadius: 18, paddingHorizontal: 15, elevation: 4, shadowColor: '#1B5E20', shadowOpacity: 0.08, shadowRadius: 15 },
+  actionRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14 },
+  rowBorder: { borderBottomWidth: 1, borderBottomColor: '#F1F5F9' },
+  actionIconBg: { width: 38, height: 38, borderRadius: 10, justifyContent: 'center', alignItems: 'center', marginRight: 15 },
+  actionTextContainer: { flex: 1 },
+  actionLabel: { fontSize: 14, fontWeight: '700', color: '#334155' },
+  actionSubLabel: { fontSize: 11, color: '#64748b', marginTop: 1, fontWeight: '500' },
+  logoutBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff', marginTop: 25, paddingVertical: 14, borderRadius: 18, gap: 10, borderWidth: 1, borderColor: '#FEE2E2' },
+  logoutText: { fontSize: 14, fontWeight: '800', color: '#EF4444' },
+  versionLabel: { textAlign: 'center', color: '#1B5E20', fontSize: 10, marginTop: 25, fontWeight: '700', opacity: 0.4 },
 });
 
 export default ProfileScreen;

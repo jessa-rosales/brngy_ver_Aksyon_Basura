@@ -1,7 +1,8 @@
-import React, { 
-  useState, 
-  useRef, 
-  useCallback 
+import React, {
+  useState,
+  useRef,
+  useCallback,
+  useEffect // ✅ Added for navigation listeners
 } from 'react';
 import {
   View,
@@ -9,28 +10,27 @@ import {
   StyleSheet,
   TouchableOpacity,
   Image,
-  Alert,
   Platform,
   TextInput,
   Modal,
-  StatusBar
+  StatusBar,
+  ActivityIndicator
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native'; // ✅ Added useNavigation
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import * as ImagePicker from 'expo-image-picker';
-import * as Location from 'expo-location'; // Added for Address detection
-import MapView, { 
-  Marker, 
-  PROVIDER_GOOGLE 
-} from 'react-native-maps';
-import { 
-  Trash2, 
-  Truck, 
-  AlertTriangle, 
-  HelpCircle, 
-  Camera, 
-  MapPin, 
+import * as Location from 'expo-location';
+
+import MapboxGL from '@rnmapbox/maps';
+
+import {
+  Trash2,
+  Truck,
+  AlertTriangle,
+  HelpCircle,
+  Camera,
+  MapPin,
   Check,
   X,
   Layers
@@ -38,9 +38,14 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { mobileService } from '../services/mobileService';
 
+import CustomAlert from '../components/CustomAlert';
+
+MapboxGL.setAccessToken('pk.eyJ1IjoiamVnby1ybyIsImEiOiJjbWx6dnZ6YmQwOW12NGtxd25vMmJldGZhIn0.uCCN-70t1ZZugt6h1ZoMOg');
+
 const ReportScreen = () => {
   const insets = useSafeAreaInsets();
   const scrollRef = useRef(null);
+  const navigation = useNavigation(); // ✅ Added navigation reference
 
   // --- FORM STATE ---
   const [selectedIssue, setSelectedIssue] = useState(null);
@@ -48,13 +53,33 @@ const ReportScreen = () => {
   const [description, setDescription] = useState('');
   const [image, setImage] = useState(null);
   const [focusedField, setFocusedField] = useState(null);
-  
+
+  // Loading State for Submission
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // ✅ NEW: Reference to allow navigation without warning when submission succeeds
+  const isSuccessNavigating = useRef(false);
+
   // --- MAP STATE ---
   const [showMap, setShowMap] = useState(false);
-  const [location, setLocation] = useState(null); 
-  const [address, setAddress] = useState(''); // New state for auto-address
-  const [mapType, setMapType] = useState('standard'); 
-  
+  const [location, setLocation] = useState(null);
+  const [address, setAddress] = useState('');
+  const [mapType, setMapType] = useState('standard');
+
+  // Custom Alert State
+  const [customAlert, setCustomAlert] = useState({
+    visible: false,
+    title: '',
+    message: '',
+    type: 'info',
+    confirmText: 'OK',
+    cancelText: 'Close',
+    onConfirm: null,
+    onCancel: null // Added to handle custom cancel actions
+  });
+
+  const closeAlert = () => setCustomAlert(prev => ({ ...prev, visible: false }));
+
   const themeGreen = '#1B5E20';
 
   const issueTypes = [
@@ -64,20 +89,72 @@ const ReportScreen = () => {
     { id: 'other', label: 'Other Issue', icon: HelpCircle, color: '#EAB308' },
   ];
 
+  // Helper to reset the form
+  const resetForm = () => {
+    setSelectedIssue(null);
+    setOtherIssueType('');
+    setDescription('');
+    setImage(null);
+    setLocation(null);
+    setAddress('');
+  };
+
+  // ✅ NEW: Check if there is any unsaved data
+  const hasUnsavedChanges = selectedIssue !== null || otherIssueType.trim() !== '' || description.trim() !== '' || image !== null || location !== null;
+
+  // ✅ NEW: Navigation Interceptor (Unsaved Changes Warning)
+  useEffect(() => {
+    // 1. Intercept Back Buttons or Stack Navigation
+    const handleBeforeRemove = (e) => {
+      if (!hasUnsavedChanges || isSuccessNavigating.current) {
+        return; // Allow navigation if no data or if we are navigating after a successful submit
+      }
+      e.preventDefault(); // Stop navigation
+      setCustomAlert({
+        visible: true,
+        title: "Discard Report?",
+        message: "You have filled out information. Are you sure you want to leave? Your progress will be lost.",
+        type: "warning",
+        confirmText: "Discard & Leave",
+        cancelText: "Stay",
+        onConfirm: () => {
+          closeAlert();
+          resetForm(); // Clear the form so it doesn't trigger again
+          navigation.dispatch(e.data.action); // Proceed with the requested navigation
+        }
+      });
+    };
+
+    const unsubscribeRemove = navigation.addListener('beforeRemove', handleBeforeRemove);
+
+    return () => {
+      unsubscribeRemove();
+    };
+  }, [navigation, hasUnsavedChanges]);
+
   useFocusEffect(
     useCallback(() => {
       if (scrollRef.current) {
         scrollRef.current.scrollToPosition(0, 0, false);
       }
+      // Reset the success flag when screen is focused again
+      isSuccessNavigating.current = false;
     }, [])
   );
 
   // --- HANDLERS ---
   const pickImage = async () => {
-    setFocusedField('photo'); 
+    setFocusedField('photo');
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Permission Denied', 'Camera permissions are required.');
+      setCustomAlert({
+        visible: true,
+        title: "Permission Denied",
+        message: "Camera permissions are required to take a photo of the issue.",
+        type: "warning",
+        confirmText: "OK",
+        cancelText: "Close"
+      });
       return;
     }
     let result = await ImagePicker.launchCameraAsync({
@@ -88,9 +165,10 @@ const ReportScreen = () => {
     if (!result.canceled) setImage(result.assets[0].uri);
   };
 
-  // Updated to include Reverse Geocoding
   const handleMapPress = async (e) => {
-    const coords = e.nativeEvent.coordinate;
+    const [longitude, latitude] = e.geometry.coordinates;
+    const coords = { latitude, longitude };
+    
     setLocation(coords);
 
     try {
@@ -100,7 +178,6 @@ const ReportScreen = () => {
         return;
       }
 
-      // Reverse Geocoding: Coords -> Address
       let response = await Location.reverseGeocodeAsync({
         latitude: coords.latitude,
         longitude: coords.longitude
@@ -108,7 +185,6 @@ const ReportScreen = () => {
 
       if (response.length > 0) {
         const item = response[0];
-        // Format the address into a single string
         const formattedAddress = `${item.name || ''} ${item.street || ''}, ${item.district || ''}, ${item.city || ''}`.trim();
         setAddress(formattedAddress);
       }
@@ -118,82 +194,132 @@ const ReportScreen = () => {
   };
 
   const toggleMapType = () => {
-    const types = ['standard', 'hybrid']; 
+    const types = ['standard', 'hybrid'];
     const nextIndex = (types.indexOf(mapType) + 1) % types.length;
     setMapType(types[nextIndex]);
   };
 
-// --- Updated handleSubmit Logic ---
-const handleSubmit = async () => {
-  // 1. Validation
-  if (!selectedIssue || (selectedIssue === 'other' && !otherIssueType.trim()) || !location) {
-    Alert.alert("Error", "Please select an issue, specify type if 'Other', and pin the location.");
-    return;
-  }
-
-  try {
-    // 2. Get User Info from Storage
-    const profileData = await AsyncStorage.getItem('userProfile');
-    if (!profileData) {
-      Alert.alert("Error", "User session not found. Please log in again.");
+  const handleSubmit = () => {
+    if (!selectedIssue || (selectedIssue === 'other' && !otherIssueType.trim()) || !location) {
+      setCustomAlert({
+        visible: true,
+        title: "Incomplete Form",
+        message: "Please select an issue, specify type if 'Other', and pin the location.",
+        type: "warning",
+        confirmText: "OK",
+        cancelText: "Close"
+      });
       return;
     }
-    const user = JSON.parse(profileData);
 
-    // 3. Map Frontend IDs to Backend ENUM values
-    const dbIssueMapping = {
-      missed: 'Missed Pickup',
-      overflow: 'Overflowing Bin',
-      dumping: 'Illegal Dumping',
-      other: 'Other'
-    };
+    setCustomAlert({
+      visible: true,
+      title: "Confirm Submission",
+      message: "Are you sure you want to submit this report?",
+      type: "info",
+      confirmText: "Yes, Submit",
+      cancelText: "Cancel",
+      onConfirm: () => {
+        closeAlert();
+        processSubmit();
+      }
+    });
+  };
 
-    // 4. Construct FormData
-    const formData = new FormData();
-    formData.append('reporter_id', user.user_id);
-    formData.append('issue_type', dbIssueMapping[selectedIssue]);
-    formData.append('issue_type_other', selectedIssue === 'other' ? otherIssueType : '');
-    formData.append('description', description);
-    
-    // Updated: Send the detected address instead of static text
-    formData.append('location_address', address || "Pinned via Mobile");
-    formData.append('latitude', location.latitude);
-    formData.append('longitude', location.longitude);
+  const processSubmit = async () => {
+    setIsSubmitting(true);
 
-    // 5. Handle Image Attachment
-    if (image) {
-      const filename = image.split('/').pop();
-      const match = /\.(\w+)$/.exec(filename);
-      const type = match ? `image/${match[1]}` : `image`;
+    try {
+      const profileData = await AsyncStorage.getItem('userProfile');
+      if (!profileData) {
+        setCustomAlert({
+          visible: true,
+          title: "Session Error",
+          message: "User session not found. Please log in again.",
+          type: "danger",
+          confirmText: "OK",
+          cancelText: "Close"
+        });
+        setIsSubmitting(false);
+        return;
+      }
+      const user = JSON.parse(profileData);
 
-      formData.append('photo', { 
-        uri: Platform.OS === 'ios' ? image.replace('file://', '') : image,
-        name: filename,
-        type: type,
-      });
-    }
+      const dbIssueMapping = {
+        missed: 'Missed Pickup',
+        overflow: 'Overflowing Bin',
+        dumping: 'Illegal Dumping',
+        other: 'Other'
+      };
 
-    // 6. Send to Service
-    const result = await mobileService.submitCitizenReport(formData);
-
-    if (result.success) {
-      Alert.alert("Success", "Report Submitted successfully!");
+      const formData = new FormData();
+      formData.append('reporter_id', user.user_id);
+      formData.append('issue_type', dbIssueMapping[selectedIssue]);
+      formData.append('issue_type_other', selectedIssue === 'other' ? otherIssueType : '');
+      formData.append('description', description);
       
-      // 7. Reset Form
-      setSelectedIssue(null);
-      setOtherIssueType('');
-      setDescription('');
-      setImage(null);
-      setLocation(null);
-      setAddress(''); 
-    } else {
-      Alert.alert("Error", result.message || "Failed to save report.");
+      formData.append('location_address', address || "Pinned via Mobile");
+      formData.append('latitude', location.latitude);
+      formData.append('longitude', location.longitude);
+
+      if (image) {
+        const filename = image.split('/').pop();
+        const match = /\.(\w+)$/.exec(filename);
+        const type = match ? `image/${match[1]}` : `image`;
+
+        formData.append('photo', {
+          uri: Platform.OS === 'ios' ? image.replace('file://', '') : image,
+          name: filename,
+          type: type,
+        });
+      }
+
+      const result = await mobileService.submitCitizenReport(formData);
+
+      if (result.success) {
+        // ✅ UPDATED: Auto-Navigate to FeedScreen on Success
+        const handleSuccessNavigation = () => {
+          closeAlert();
+          isSuccessNavigating.current = true; // Tell the beforeRemove listener to ignore this navigation
+          resetForm();
+          // Adjust 'FeedScreen' to match the exact name of your Feed route in AppNavigator if needed
+          navigation.navigate('Feed');
+        };
+
+        setCustomAlert({
+          visible: true,
+          title: "Success!",
+          message: "Your report has been submitted successfully.",
+          type: "success",
+          confirmText: "Go to Feed",
+          cancelText: "Close",
+          onConfirm: handleSuccessNavigation, // If they click the Confirm Button
+          onCancel: handleSuccessNavigation   // If they click the Cancel/Close button
+        });
+      } else {
+        setCustomAlert({
+          visible: true,
+          title: "Submission Failed",
+          message: result.message || "Failed to save report.",
+          type: "danger",
+          confirmText: "OK",
+          cancelText: "Close"
+        });
+      }
+    } catch (error) {
+      console.error("Submission Error:", error);
+      setCustomAlert({
+        visible: true,
+        title: "Network Error",
+        message: "Submission failed. Please check your connection to the server.",
+        type: "danger",
+        confirmText: "OK",
+        cancelText: "Close"
+      });
+    } finally {
+      setIsSubmitting(false);
     }
-  } catch (error) {
-    console.error("Submission Error:", error);
-    Alert.alert("Error", "Submission failed. Please check your connection to the server.");
-  }
-};
+  };
 
   return (
     <View style={styles.container}>
@@ -205,7 +331,7 @@ const handleSubmit = async () => {
         extraScrollHeight={140}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={[
-          styles.scrollContent, 
+          styles.scrollContent,
           { paddingBottom: insets.bottom + 40 }
         ]}
       >
@@ -225,23 +351,23 @@ const handleSubmit = async () => {
                   if (item.id !== 'other') setOtherIssueType('');
                 }}
                 style={[
-                  styles.issueCard, 
-                  selectedIssue === item.id && { 
-                    borderColor: item.color, 
-                    backgroundColor: item.color + '10' 
+                  styles.issueCard,
+                  selectedIssue === item.id && {
+                    borderColor: item.color,
+                    backgroundColor: item.color + '10'
                   }
                 ]}
               >
-                <item.icon 
-                  size={28} 
-                  color={selectedIssue === item.id ? item.color : '#64748b'} 
+                <item.icon
+                  size={28}
+                  color={selectedIssue === item.id ? item.color : '#64748b'}
                 />
-                <Text 
+                <Text
                   style={[
-                    styles.issueLabel, 
-                    selectedIssue === item.id && { 
-                      color: item.color, 
-                      fontWeight: '700' 
+                    styles.issueLabel,
+                    selectedIssue === item.id && {
+                      color: item.color,
+                      fontWeight: '700'
                     }
                   ]}
                 >
@@ -262,7 +388,7 @@ const handleSubmit = async () => {
                 onFocus={() => setFocusedField('otherType')}
                 onBlur={() => setFocusedField(null)}
                 style={[
-                  styles.singleInput, 
+                  styles.singleInput,
                   focusedField === 'otherType' && { borderColor: themeGreen }
                 ]}
               />
@@ -270,12 +396,12 @@ const handleSubmit = async () => {
           )}
 
           <Text style={styles.sectionLabel}>Photo Evidence</Text>
-          <TouchableOpacity 
+          <TouchableOpacity
             onPress={pickImage}
             style={[
-              styles.photoBox, 
+              styles.photoBox,
               focusedField === 'photo' && { borderColor: themeGreen }
-            ]} 
+            ]}
           >
             {image ? (
               <Image source={{ uri: image }} style={styles.preview} />
@@ -288,29 +414,28 @@ const handleSubmit = async () => {
           </TouchableOpacity>
 
           <Text style={styles.sectionLabel}>Location</Text>
-          <TouchableOpacity 
+          <TouchableOpacity
             onPress={() => setShowMap(true)}
             style={[
-              styles.locationButton, 
+              styles.locationButton,
               location && { borderColor: themeGreen }
             ]}
           >
-            <View 
+            <View
               style={[
-                styles.pinIconBg, 
+                styles.pinIconBg,
                 { backgroundColor: location ? '#F0F9ED' : '#F8FAFC' }
               ]}
             >
-              <MapPin 
-                size={20} 
-                color={location ? themeGreen : "#64748b"} 
+              <MapPin
+                size={20}
+                color={location ? themeGreen : "#64748b"}
               />
             </View>
             <View style={{ flex: 1 }}>
                 <Text style={styles.locationButtonText}>
                 {location ? "Location Pinned" : "Pin Location on Map"}
                 </Text>
-                {/* Display Address Snippet in Main UI */}
                 {address !== '' && (
                     <Text numberOfLines={1} style={styles.addressSnippet}>
                         {address}
@@ -335,48 +460,62 @@ const handleSubmit = async () => {
             onFocus={() => setFocusedField('description')}
             onBlur={() => setFocusedField(null)}
             style={[
-              styles.input, 
+              styles.input,
               focusedField === 'description' && { borderColor: themeGreen }
             ]}
           />
 
-          <TouchableOpacity 
+          <TouchableOpacity
             activeOpacity={0.8}
             onPress={handleSubmit}
+            disabled={isSubmitting}
             style={[
-              styles.submitBtn, 
-              { backgroundColor: themeGreen }
-            ]} 
+              styles.submitBtn,
+              { backgroundColor: isSubmitting ? '#94A3B8' : themeGreen }
+            ]}
           >
-            <Text style={styles.submitText}>Submit Report</Text>
+            {isSubmitting ? (
+              <ActivityIndicator color="#ffffff" size="small" />
+            ) : (
+              <Text style={styles.submitText}>Submit Report</Text>
+            )}
           </TouchableOpacity>
         </View>
       </KeyboardAwareScrollView>
 
-      {/* --- MAP MODAL --- */}
+      {/* --- MAP MODAL WITH MAPBOX --- */}
       <Modal visible={showMap} animationType="slide">
         <View style={styles.mapModalContainer}>
-          <MapView
-            provider={PROVIDER_GOOGLE}
-            mapType={mapType}
-            onPress={handleMapPress}
+          <MapboxGL.MapView
             style={styles.map}
-            initialRegion={{
-              latitude: 8.4772, 
-              longitude: 124.6459,
-              latitudeDelta: 0.05,
-              longitudeDelta: 0.05,
-            }}
+            styleURL={mapType === 'hybrid' ? MapboxGL.StyleURL.SatelliteStreet : MapboxGL.StyleURL.Street}
+            onPress={handleMapPress}
+            logoEnabled={false}
+            attributionEnabled={false}
           >
+            <MapboxGL.Camera
+              zoomLevel={14}
+              centerCoordinate={location ? [location.longitude, location.latitude] : [124.6459, 8.4772]} // CDO Center Fallback
+              animationMode="flyTo"
+              animationDuration={1000}
+            />
+
             {location && (
-              <Marker coordinate={location} pinColor={themeGreen} />
+              <MapboxGL.PointAnnotation
+                id="pinned-location"
+                coordinate={[location.longitude, location.latitude]}
+              >
+                <View style={styles.customPinContainer}>
+                  <MapPin size={36} color={themeGreen} fill="#F0F9ED" />
+                </View>
+              </MapboxGL.PointAnnotation>
             )}
-          </MapView>
+          </MapboxGL.MapView>
 
           <View style={[styles.mapHeader, { paddingTop: insets.top + 10 }]}>
-             <TouchableOpacity 
+             <TouchableOpacity
                onPress={() => setShowMap(false)}
-               style={styles.mapCloseBtn} 
+               style={styles.mapCloseBtn}
              >
                 <X size={24} color="#000" />
              </TouchableOpacity>
@@ -390,22 +529,34 @@ const handleSubmit = async () => {
           </View>
 
           <View style={[styles.mapFooter, { paddingBottom: insets.bottom + 20 }]}>
-             {/* Address Preview in Modal */}
              {address !== '' && (
                  <View style={styles.addressPreviewContainer}>
                      <Text style={styles.addressPreviewTitle}>Detected Address:</Text>
                      <Text style={styles.addressPreviewText}>{address}</Text>
                  </View>
              )}
-             <TouchableOpacity 
+             <TouchableOpacity
                onPress={() => setShowMap(false)}
-               style={[styles.confirmBtn, { backgroundColor: themeGreen }]} 
+               style={[styles.confirmBtn, { backgroundColor: themeGreen }]}
              >
                <Text style={styles.confirmBtnText}>Confirm Location</Text>
              </TouchableOpacity>
           </View>
         </View>
       </Modal>
+
+      {/* CUSTOM ALERT MODAL */}
+      <CustomAlert
+        visible={customAlert.visible}
+        title={customAlert.title}
+        message={customAlert.message}
+        type={customAlert.type}
+        confirmText={customAlert.confirmText}
+        cancelText={customAlert.cancelText}
+        onConfirm={customAlert.onConfirm || closeAlert}
+        onCancel={customAlert.onCancel || closeAlert}
+      />
+
     </View>
   );
 };
@@ -569,6 +720,11 @@ const styles = StyleSheet.create({
   },
   map: { 
     flex: 1 
+  },
+  customPinContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    transform: [{ translateY: -18 }] 
   },
   mapHeader: { 
     position: 'absolute', 

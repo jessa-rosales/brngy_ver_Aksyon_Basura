@@ -1,9 +1,12 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, Platform, StatusBar, ActivityIndicator, RefreshControl, Image, Dimensions, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, Platform, StatusBar, ActivityIndicator, RefreshControl, Image, Dimensions } from 'react-native';
 import { ChevronDown, MapPin, Truck, Clock, CheckCircle2, AlertCircle, Camera, Navigation, Trash2, AlertTriangle, Map as MapIcon, X } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { mobileService } from '../services/mobileService'; 
+
+// ✅ IMPORT YOUR CUSTOM ALERT COMPONENT
+import CustomAlert from '../components/CustomAlert';
 
 const { width } = Dimensions.get('window');
 
@@ -17,6 +20,9 @@ const TrackScreen = ({ navigation }) => {
   
   const [evidencePhoto, setEvidencePhoto] = useState(null);
 
+  // ✅ NEW: State to control the Custom Alert
+  const [customAlert, setCustomAlert] = useState({ visible: false, title: '', message: '', type: 'info' });
+
   const isToday = (dateString) => {
     if (!dateString) return false;
     const itemDate = new Date(dateString);
@@ -26,7 +32,7 @@ const TrackScreen = ({ navigation }) => {
            itemDate.getFullYear() === today.getFullYear();
   };
 
-  // ✅ NEW TIME CHECKER: Determines if the timestamp is within the last 5 hours
+  // NEW TIME CHECKER: Determines if the timestamp is within the last 5 hours
   const isWithin5Hours = (dateString) => {
     if (!dateString) return false;
     const itemTime = new Date(dateString).getTime();
@@ -47,7 +53,7 @@ const TrackScreen = ({ navigation }) => {
                 ...bin,
                 status: isToday(bin.updated_at) ? bin.status : 'Pending'
             })),
-            // ✅ FILTER REPORTS: Keep if Pending/In Progress, or if Resolved within the last 5 hours!
+            // FILTER REPORTS: Keep if Pending/In Progress, or if Resolved within the last 5 hours!
             reports: (zone.reports || []).filter(report => {
                 if (report.status === 'Resolved') {
                     return isWithin5Hours(report.updated_at);
@@ -140,7 +146,7 @@ const TrackScreen = ({ navigation }) => {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+    <SafeAreaView style={styles.container} edges={['left', 'right']}>
       <StatusBar barStyle="dark-content" backgroundColor="#E3F3DF" />
       
       <ScrollView 
@@ -310,10 +316,13 @@ const TrackScreen = ({ navigation }) => {
                                             ]}
                                             onPress={() => {
                                                 if (!item.has_photo) {
-                                                    Alert.alert(
-                                                        "No Photo Available", 
-                                                        "This location has not been collected yet, or no photo evidence was submitted."
-                                                    );
+                                                    // ✅ REPLACED: Using CustomAlert instead of Alert.alert
+                                                    setCustomAlert({
+                                                      visible: true,
+                                                      title: "No Photo Available",
+                                                      message: "This location has not been collected yet, or no photo evidence was submitted.",
+                                                      type: "info"
+                                                    });
                                                     return;
                                                 }
 
@@ -322,10 +331,13 @@ const TrackScreen = ({ navigation }) => {
                                                 if (url && typeof url === 'string') {
                                                     setEvidencePhoto(mobileService.getImageUrl(url));
                                                 } else {
-                                                    Alert.alert(
-                                                      "Missing URL", 
-                                                      "The app knows a photo exists, but the server didn't send the URL string."
-                                                    );
+                                                    // ✅ REPLACED: Using CustomAlert instead of Alert.alert
+                                                    setCustomAlert({
+                                                      visible: true,
+                                                      title: "Missing URL",
+                                                      message: "The app knows a photo exists, but the server didn't send the URL string.",
+                                                      type: "warning"
+                                                    });
                                                 }
                                             }}
                                         >
@@ -412,6 +424,18 @@ const TrackScreen = ({ navigation }) => {
         </View>
       </Modal>
 
+      {/* ✅ NEW: CUSTOM ALERT OVERLAY */}
+      <CustomAlert 
+        visible={customAlert.visible}
+        title={customAlert.title}
+        message={customAlert.message}
+        type={customAlert.type}
+        confirmText="OK"
+        cancelText="Close"
+        onConfirm={() => setCustomAlert({ ...customAlert, visible: false })}
+        onCancel={() => setCustomAlert({ ...customAlert, visible: false })}
+      />
+
     </SafeAreaView>
   );
 };
@@ -425,7 +449,7 @@ const getStatusIcon = (status) => {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#E3F3DF' },
   scrollContent: { padding: 20, paddingBottom: 40 },
-  headerSection: { marginBottom: 20 },
+  headerSection: { marginTop: -15, marginBottom: 20 },
   screenTitle: { fontSize: 28, fontWeight: '800', color: '#1e293b' },
   subTitle: { fontSize: 14, color: '#64748b', marginTop: 4, marginBottom: 15 },
   dropdownButton: { backgroundColor: '#F6FBF6', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderRadius: 16, borderWidth: 1, borderColor: '#e2e8f0', elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05 },

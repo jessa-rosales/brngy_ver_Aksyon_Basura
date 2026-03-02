@@ -883,7 +883,7 @@ const DriverRouteScreen = ({ navigation, route }) => {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#E3F3DF' },
   scrollContent: { padding: 20, paddingBottom: 150 },
-  topHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 25 },
+  topHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 25, marginTop: -40 },
   dateText: { fontSize: 11, fontWeight: '700', color: '#10B981', textTransform: 'uppercase', letterSpacing: 1 },
   smallGreeting: { fontSize: 12, fontWeight: '600', color: '#64748b', marginTop: 2, textTransform: 'uppercase', letterSpacing: 0.5 },
   greetingText: { fontSize: 28, fontWeight: '900', color: '#1e293b', marginTop: -2 },
