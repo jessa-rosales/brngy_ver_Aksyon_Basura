@@ -1,7 +1,8 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Dimensions, Platform, StatusBar, Alert } from 'react-native';
 import MapboxGL from '@rnmapbox/maps';
-import { Truck, Bell, ChevronLeft, MapPin, Navigation, CheckCircle2, Trash2, AlertTriangle, Map as MapIcon } from 'lucide-react-native';
+// ✅ ADDED 'Clock' to imports for the In Progress icon
+import { Truck, Bell, ChevronLeft, MapPin, Navigation, CheckCircle2, Trash2, AlertTriangle, Map as MapIcon, Clock } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -18,26 +19,78 @@ const RenderBinMarker = ({ status }) => (
   </View>
 );
 
-const RenderReportMarker = ({ isCompleted }) => (
-  <View style={styles.reportMarkerContainer}>
-    <View style={[styles.reportCore, isCompleted && styles.collectedCore]}>
-      {isCompleted ? <CheckCircle2 size={12} color="white" /> : <AlertTriangle size={12} color="white" />}
+// ✅ UPDATED: Now receives 'status' instead of 'isCompleted'
+const RenderReportMarker = ({ status, isFocused }) => {
+  // ✅ 3-WAY DYNAMIC COLORS: Green (Resolved), Orange (In Progress), Red (Pending)
+  let markerColor = '#EF4444'; // Red default
+  let ringColor = 'rgba(239, 68, 68, 0.4)';
+  
+  if (status === 'Resolved' || status === 'Collected') {
+    markerColor = '#10B981'; // Green
+    ringColor = 'rgba(16, 185, 129, 0.4)';
+  } else if (status === 'In Progress') {
+    markerColor = '#F59E0B'; // Orange
+    ringColor = 'rgba(245, 158, 11, 0.4)';
+  }
+
+  return (
+    <View style={styles.reportMarkerContainer}>
+      {/* Visual pulse ring if this is the focused report */}
+      {isFocused && <View style={[styles.focusedRing, { backgroundColor: ringColor, borderColor: markerColor }]} />}
+      <View style={[
+        styles.reportCore, 
+        { backgroundColor: markerColor }, // Applies dynamic color to all markers
+        isFocused && { borderColor: 'white', borderWidth: 3, width: 24, height: 24, borderRadius: 12 }
+      ]}>
+        {/* Dynamic Icon based on status */}
+        {status === 'Resolved' || status === 'Collected' ? (
+          <CheckCircle2 size={12} color="white" />
+        ) : status === 'In Progress' ? (
+          <Clock size={12} color="white" />
+        ) : (
+          <AlertTriangle size={12} color="white" />
+        )}
+      </View>
+      <View style={[
+        styles.reportTip, 
+        { backgroundColor: markerColor }
+      ]} />
     </View>
-    <View style={[styles.reportTip, isCompleted && styles.collectedTip]} />
-  </View>
-);
+  );
+};
 
 const LiveMapScreen = ({ navigation, route }) => {
   const insets = useSafeAreaInsets();
   
+  // Ref to control the Mapbox Camera
+  const cameraRef = useRef(null);
+
   const zoneData = route.params?.zoneData || {};
   const allZonesData = route.params?.allZonesData || []; 
   const isAllZones = zoneData.zone_id === 'all';
+  
+  // Read the navigation parameters sent from FeedScreen
+  const targetLocation = route.params?.focusLocation;
+  const targetReportId = route.params?.reportId;
+  const targetReport = route.params?.targetReport;
 
   const bins = isAllZones ? allZonesData.flatMap(z => z.bins || []) : (zoneData.bins || []);
   const reports = isAllZones ? allZonesData.flatMap(z => z.reports || []) : (zoneData.reports || []);
   
-  // ✅ FIXED: Bulletproof Mapbox GeoJSON Parsing Logic
+  // Effect to trigger zoom animation if focusLocation exists
+  useEffect(() => {
+    if (targetLocation && cameraRef.current) {
+      setTimeout(() => {
+        cameraRef.current.setCamera({
+          centerCoordinate: [Number(targetLocation.longitude), Number(targetLocation.latitude)],
+          zoomLevel: 18, // High zoom to see the specific report
+          animationDuration: 2000, // Smooth 2-second fly-to animation
+          pitch: 45, // Add a little 3D tilt for a cooler effect
+        });
+      }, 500);
+    }
+  }, [targetLocation]);
+
   const zoneFeatures = useMemo(() => {
     const features = [];
 
@@ -56,19 +109,17 @@ const LiveMapScreen = ({ navigation, route }) => {
 
         if (!rawPoints || rawPoints.length === 0) return;
 
-        // 1. Ensure [lng, lat] format
         const polygonCoords = rawPoints.map(p => {
           const lat = Number(Array.isArray(p) ? p[1] : (p.latitude || p.lat));
           const lng = Number(Array.isArray(p) ? p[0] : (p.longitude || p.lng));
           return [lng, lat];
         });
 
-        // 2. Mapbox STRICT rule: Polygons must be closed (first point === last point)
         if (polygonCoords.length > 2) {
           const first = polygonCoords[0];
           const last = polygonCoords[polygonCoords.length - 1];
           if (first[0] !== last[0] || first[1] !== last[1]) {
-            polygonCoords.push([first[0], first[1]]); // Close the loop automatically
+            polygonCoords.push([first[0], first[1]]); 
           }
         }
 
@@ -76,11 +127,11 @@ const LiveMapScreen = ({ navigation, route }) => {
           type: 'Feature',
           properties: {
             zone_name: z.zone_name,
-            zone_color: z.zone_color || '#3B82F6' // Fallback color just in case
+            zone_color: z.zone_color || '#3B82F6' 
           },
           geometry: {
             type: 'Polygon',
-            coordinates: [polygonCoords] // 3. Ensure deep array bracket structure
+            coordinates: [polygonCoords] 
           }
         });
       } catch (e) {
@@ -91,11 +142,13 @@ const LiveMapScreen = ({ navigation, route }) => {
     return { type: 'FeatureCollection', features };
   }, [allZonesData]);
 
-  const initialCameraCoords = (zoneData.truck_lng && zoneData.truck_lat && !isAllZones)
-    ? [Number(zoneData.truck_lng), Number(zoneData.truck_lat)] 
-    : [124.6459, 8.4772]; // CDO Center
+  const initialCameraCoords = targetLocation 
+    ? [Number(targetLocation.longitude), Number(targetLocation.latitude)]
+    : (zoneData.truck_lng && zoneData.truck_lat && !isAllZones)
+        ? [Number(zoneData.truck_lng), Number(zoneData.truck_lat)] 
+        : [124.6459, 8.4772];
     
-  const zoomLvl = isAllZones ? 13 : 15.5;
+  const zoomLvl = targetLocation ? 18 : (isAllZones ? 13 : 15.5);
 
   const allStops = [...bins, ...reports];
   const totalStops = allStops.length;
@@ -125,12 +178,12 @@ const LiveMapScreen = ({ navigation, route }) => {
           attributionEnabled={false}
         >
           <MapboxGL.Camera
+            ref={cameraRef}
             centerCoordinate={initialCameraCoords}
             zoomLevel={zoomLvl}
             animationDuration={1500}
           />
 
-          {/* Render Colored Zone Boundaries */}
           {zoneFeatures.features.length > 0 && (
             <MapboxGL.ShapeSource 
               id="zonesSource" 
@@ -154,7 +207,6 @@ const LiveMapScreen = ({ navigation, route }) => {
             </MapboxGL.ShapeSource>
           )}
 
-          {/* Render Truck Marker */}
           {!isAllZones && zoneData.truck_lat && (
             <MapboxGL.PointAnnotation id="truck-marker" coordinate={initialCameraCoords}>
               <View style={styles.truckMarker}>
@@ -166,7 +218,6 @@ const LiveMapScreen = ({ navigation, route }) => {
             </MapboxGL.PointAnnotation>
           )}
 
-          {/* Render Bins */}
           {bins.map((bin, index) => {
             if (!bin.lng || !bin.lat) return null;
             return (
@@ -180,20 +231,37 @@ const LiveMapScreen = ({ navigation, route }) => {
             );
           })}
 
-          {/* Render Reports */}
           {reports.map((report, index) => {
             if (!report.lng || !report.lat) return null;
-            const isCompleted = report.status === 'Resolved' || report.status === 'Collected';
+            const isFocused = String(report.id) === String(targetReportId);
+
             return (
               <MapboxGL.PointAnnotation 
                 key={`map-rep-${report.id || 'new'}-${index}`} 
                 id={`map-rep-${report.id || 'new'}-${index}`} 
                 coordinate={[Number(report.lng), Number(report.lat)]}
+                style={{ zIndex: isFocused ? 1000 : 1 }}
               >
-                <RenderReportMarker isCompleted={isCompleted} />
+                {/* ✅ UPDATED: Passing actual status down to the component */}
+                <RenderReportMarker status={report.status} isFocused={isFocused} />
               </MapboxGL.PointAnnotation>
             );
           })}
+
+          {/* ✅ If coming from FeedScreen, force render the marker using the exact targetLocation */}
+          {targetLocation && (
+            <MapboxGL.PointAnnotation 
+              id="focused-target-marker" 
+              coordinate={[Number(targetLocation.longitude), Number(targetLocation.latitude)]}
+              style={{ zIndex: 1000 }}
+            >
+              {/* ✅ UPDATED: Passing targetReport status */}
+              <RenderReportMarker 
+                status={targetReport ? targetReport.status : 'Pending'} 
+                isFocused={true} 
+              />
+            </MapboxGL.PointAnnotation>
+          )}
 
         </MapboxGL.MapView>
       </View>
@@ -205,7 +273,9 @@ const LiveMapScreen = ({ navigation, route }) => {
         
         <View style={styles.headerTag}>
           <View style={[styles.liveDot, isAllZones && { backgroundColor: '#3B82F6' }]} />
-          <Text style={styles.headerText}>{isAllZones ? 'CITY OVERVIEW' : 'LIVE TRACKING'}</Text>
+          <Text style={styles.headerText}>
+            {targetLocation ? 'NAVIGATING TO REPORT' : (isAllZones ? 'CITY OVERVIEW' : 'LIVE TRACKING')}
+          </Text>
         </View>
       </View>
 
@@ -215,15 +285,40 @@ const LiveMapScreen = ({ navigation, route }) => {
           
           <View style={styles.statusHeader}>
             <View>
-              <Text style={styles.truckId}>{isAllZones ? 'Cagayan de Oro City' : (zoneData.vehicle_name || zoneData.plate_number || 'Vehicle #N/A')}</Text>
-              <Text style={styles.driverName}>{isAllZones ? 'All Monitoring Zones' : `Driver: ${zoneData.driver_name || 'Unassigned'}`}</Text>
+              <Text style={styles.truckId}>
+                {targetLocation ? 'Report Location View' : (isAllZones ? 'Cagayan de Oro City' : (zoneData.vehicle_name || zoneData.plate_number || 'Vehicle #N/A'))}
+              </Text>
+              <Text style={styles.driverName}>
+                {targetReport ? `Current Status: ${targetReport.status}` : (isAllZones ? 'All Monitoring Zones' : `Driver: ${zoneData.driver_name || 'Unassigned'}`)}
+              </Text>
             </View>
-            {!isAllZones && (
+            
+            {/* DYNAMIC RIGHT BADGE: Shows "Resolved", "In Progress", or "Pending" */}
+            {targetReport ? (
+              <View style={styles.etaContainer}>
+                {targetReport.status === 'Resolved' ? (
+                  <View style={[styles.statusBadge, { backgroundColor: '#D1FAE5' }]}>
+                    <CheckCircle2 size={16} color="#10B981" />
+                    <Text style={[styles.statusBadgeText, { color: '#10B981' }]}>Resolved</Text>
+                  </View>
+                ) : targetReport.status === 'In Progress' ? (
+                  <View style={[styles.statusBadge, { backgroundColor: '#FEF3C7' }]}>
+                    <Clock size={16} color="#F59E0B" />
+                    <Text style={[styles.statusBadgeText, { color: '#F59E0B' }]}>In Progress</Text>
+                  </View>
+                ) : (
+                  <View style={[styles.statusBadge, { backgroundColor: '#FEE2E2' }]}>
+                    <AlertTriangle size={16} color="#EF4444" />
+                    <Text style={[styles.statusBadgeText, { color: '#EF4444' }]}>Pending</Text>
+                  </View>
+                )}
+              </View>
+            ) : (!isAllZones && !targetLocation && (
               <View style={styles.etaContainer}>
                 <Text style={styles.etaTime}>Active</Text>
                 <Text style={styles.etaLabel}>{zoneData.zone_name}</Text>
               </View>
-            )}
+            ))}
           </View>
 
           <View style={styles.divider} />
@@ -231,9 +326,9 @@ const LiveMapScreen = ({ navigation, route }) => {
           <View style={styles.locationRow}>
              {isAllZones ? <MapIcon size={16} color="#3B82F6" /> : <Navigation size={16} color="#3B82F6" />}
              <Text style={styles.locationText}>
-               {isAllZones ? 'Total Pending Stops: ' : (nextStop ? 'Approaching ' : 'Current Status: ')} 
+               {targetLocation ? 'Report Address: ' : (isAllZones ? 'Total Pending Stops: ' : (nextStop ? 'Approaching ' : 'Current Status: '))} 
                <Text style={{fontWeight: '700', color:'#1e293b'}}>
-                 {isAllZones ? pendingStops : locationText}
+                 {targetReport ? targetReport.location_address : (targetLocation ? 'Selected Report Location' : (isAllZones ? pendingStops : locationText))}
                </Text>
              </Text>
           </View>
@@ -276,11 +371,12 @@ const styles = StyleSheet.create({
   emeraldMarkerContainer: { alignItems: 'center', justifyContent: 'center', width: 30, height: 30 },
   emeraldCore: { width: 20, height: 20, borderRadius: 10, backgroundColor: '#10B981', borderWidth: 2, borderColor: 'white', alignItems: 'center', justifyContent: 'center', elevation: 3, zIndex: 2 },
   emeraldTip: { width: 8, height: 8, backgroundColor: '#10B981', borderBottomWidth: 2, borderRightWidth: 2, borderColor: 'white', transform: [{ rotate: '45deg' }], marginTop: -4, zIndex: 1 },
-  reportMarkerContainer: { alignItems: 'center', justifyContent: 'center', width: 30, height: 30 },
-  reportCore: { width: 20, height: 20, borderRadius: 10, backgroundColor: '#DC2626', borderWidth: 2, borderColor: 'white', alignItems: 'center', justifyContent: 'center', elevation: 3, zIndex: 2 },
-  reportTip: { width: 8, height: 8, backgroundColor: '#DC2626', borderBottomWidth: 2, borderRightWidth: 2, borderColor: 'white', transform: [{ rotate: '45deg' }], marginTop: -4, zIndex: 1 },
+  reportMarkerContainer: { alignItems: 'center', justifyContent: 'center', width: 40, height: 40 },
+  reportCore: { width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: 'white', alignItems: 'center', justifyContent: 'center', elevation: 3, zIndex: 2 },
+  reportTip: { width: 8, height: 8, borderBottomWidth: 2, borderRightWidth: 2, borderColor: 'white', transform: [{ rotate: '45deg' }], marginTop: -4, zIndex: 1 },
   collectedCore: { backgroundColor: '#94a3b8' },
   collectedTip: { backgroundColor: '#94a3b8' },
+  focusedRing: { position: 'absolute', width: 40, height: 40, borderRadius: 20, zIndex: 0, borderWidth: 1 },
   bottomContainer: { position: 'absolute', bottom: 0, left: 0, right: 0, paddingHorizontal: 20 },
   statusCard: { backgroundColor: '#F6FBF6', borderRadius: 24, padding: 20, paddingTop: 10, elevation: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1 },
   dragHandle: { width: 40, height: 4, backgroundColor: '#cbd5e1', borderRadius: 2, alignSelf: 'center', marginBottom: 15 },
@@ -290,6 +386,8 @@ const styles = StyleSheet.create({
   etaContainer: { alignItems: 'flex-end' },
   etaTime: { fontSize: 20, fontWeight: '800', color: '#3B82F6' },
   etaLabel: { fontSize: 11, color: '#64748b', fontWeight: '600' },
+  statusBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20 },
+  statusBadgeText: { fontSize: 12, fontWeight: '800', textTransform: 'uppercase' },
   divider: { height: 1, backgroundColor: '#e2e8f0', marginVertical: 15 },
   locationRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#EFF6FF', padding: 10, borderRadius: 10, marginBottom: 15 },
   locationText: { marginLeft: 8, fontSize: 13, color: '#475569', flex: 1 },
