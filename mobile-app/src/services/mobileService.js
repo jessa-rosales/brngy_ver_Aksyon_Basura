@@ -378,9 +378,25 @@ toggleAttention: async (reportId, userId) => {
 },
   
   // Unified image URL handler
+ /*
   getImageUrl: (path) => {
     if (!path) return null;
     const cleanPath = path.startsWith('/') ? path : `/${path}`;
     return `${NGROK_URL}${cleanPath}`;
+  } UPDATED MARCH 3*/
+
+  // Unified image URL handler (BULLETPROOF VERSION)
+  getImageUrl: (path) => {
+    if (!path || path === "" || path === "null") return null;
+    
+    // If it's already a full URL, just return it
+    if (path.startsWith('http')) return path;
+    
+    // Remove all leading slashes from the path, and trailing slashes from NGROK
+    const cleanPath = path.replace(/^\/+/, ''); 
+    const cleanBase = NGROK_URL.replace(/\/+$/, '');
+    
+    return `${cleanBase}/${cleanPath}`;
   }
+
 };
