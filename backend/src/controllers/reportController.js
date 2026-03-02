@@ -144,8 +144,13 @@ const getAllReports = async (req, res) => {
                 CONCAT(u.first_name, ' ', u.last_name) AS reporter_name,
                 u.profile_picture,
                 u.contact_number,
-                -- ✅ FIXED: Use NULLIF to ensure it returns actual NULL if no driver exists
+                
+                -- 🚚 Get Driver Name
                 NULLIF(TRIM(CONCAT(driver.first_name, ' ', driver.last_name)), '') AS assigned_driver_name,
+                
+                -- 🧑‍🦯 GET COLLECTOR NAME (This fixes the Modal!)
+                NULLIF(TRIM(CONCAT(collector.first_name, ' ', collector.last_name)), '') AS collector_name,
+
                 (SELECT COUNT(*) FROM report_attention ra WHERE ra.report_id = r.report_id) AS attention_count,
                 CAST(EXISTS (
                     SELECT 1 FROM report_attention 
@@ -153,9 +158,14 @@ const getAllReports = async (req, res) => {
                 ) AS BOOLEAN) AS has_attended
             FROM citizen_reports r
             LEFT JOIN users u ON r.reporter_id = u.user_id
-            -- ✅ Join to get the Driver through the task_assignments table
+            
+            -- Join for Driver
             LEFT JOIN task_assignments ta ON r.assigned_team_id = ta.task_id
             LEFT JOIN users driver ON ta.driver_id = driver.user_id
+            
+            -- ✅ MISSING JOIN: This links the uploaded photo to the actual User to get their name
+            LEFT JOIN users collector ON r.photo_uploaded_by = collector.user_id
+            
             WHERE r.is_archived = false
             ORDER BY r.created_at DESC;
         `;
