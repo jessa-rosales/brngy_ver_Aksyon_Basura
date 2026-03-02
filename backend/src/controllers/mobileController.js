@@ -302,6 +302,57 @@ const getAllReports = async (req, res) => {
     }
 };
 
+// ✅ NEW: Endpoint to archive reports from the mobile app
+const archiveReport = async (req, res) => {
+    const { report_id } = req.body;
+
+    if (!report_id) {
+        return res.status(400).json({ success: false, message: 'Report ID is required' });
+    }
+
+    try {
+        const query = `
+            UPDATE citizen_reports 
+            SET is_archived = true 
+            WHERE report_id = $1 
+            RETURNING report_id;
+        `;
+        const result = await pool.query(query, [report_id]);
+        
+        if (result.rows.length === 0) {
+            return res.status(404).json({ success: false, message: 'Report not found' });
+        }
+        
+        res.status(200).json({ success: true, message: 'Report archived successfully' });
+    } catch (error) {
+        console.error("Archive Report Error:", error);
+        res.status(500).json({ success: false, message: 'Server Error' });
+    }
+};
+
+const getArchivedReports = async (req, res) => {
+    try {
+        const query = `
+            SELECT 
+                r.*,
+                r.reporter_id AS user_id, 
+                CONCAT(reporter.first_name, ' ', reporter.last_name) AS reporter_name
+            FROM citizen_reports r
+            LEFT JOIN users reporter ON r.reporter_id = reporter.user_id
+            WHERE r.is_archived = true
+            ORDER BY r.updated_at DESC;
+        `;
+        
+        const result = await pool.query(query);
+        res.status(200).json({ success: true, reports: result.rows });
+    } catch (error) {
+        console.error("Fetch Archived reports error:", error);
+        res.status(500).json({ success: false, message: 'Server Error' });
+    }
+};
+
+// Don't forget to add getArchivedReports to your module.exports!
+
 // ✅ UPDATED EXPORTS: Added getAllReports
 module.exports = { 
   getMobileAssignment, 
@@ -309,5 +360,7 @@ module.exports = {
   confirmBinCollection, 
   updateVehicleLocation,
   getActiveTrackingRoutes,
-  getAllReports
+  getAllReports,
+  archiveReport,
+  getArchivedReports
 };
