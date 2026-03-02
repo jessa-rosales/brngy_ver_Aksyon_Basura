@@ -363,22 +363,25 @@ toggleAttention: async (reportId, userId) => {
 //For MyHistory in the Profile Screen
   getUserReportHistory: async () => {
     try {
-        const token = await AsyncStorage.getItem('token');
-        // We hit the specific 'mobile' route we created for the history
-        const response = await fetch(`${API_URL}/mobile/all-reports`, { 
-            method: 'GET',
-            headers: {
-                'Authorization': `Bearer ${token}`,
-                'ngrok-skip-browser-warning': 'true'
-            },
-        });
-        return await response.json();
+      // ✅ Must get token so the backend knows WHO is looking at the reports
+      let token = await AsyncStorage.getItem('userToken'); 
+      if (!token) token = await AsyncStorage.getItem('token'); 
+      
+      const response = await fetch(`${API_URL}/mobile/all-reports`, {
+        method: 'GET',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}` // 👈 Critical for 'has_attended' to work
+        }
+      });
+      return await response.json();
     } catch (error) {
-        console.error("Fetch User History Error:", error);
-        return { success: false, reports: [] };
+      console.error("Get User Report History Error:", error);
+      return { success: false, message: 'Network error' };
     }
-},
+  },
 
+//For Archive Center in the Profile Screen
 archiveReport: async (reportId) => {
     try {
       // Get the token securely
@@ -404,11 +407,19 @@ archiveReport: async (reportId) => {
     }
   },
 
+  // Add this inside your mobileService object
   getArchivedReports: async () => {
     try {
-      let token = await AsyncStorage.getItem('userToken') || await AsyncStorage.getItem('token'); 
+      // Get token safely
+      let token = await AsyncStorage.getItem('userToken'); 
+      if (!token) token = await AsyncStorage.getItem('token'); 
+      
       const response = await fetch(`${API_URL}/mobile/archived-reports`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        method: 'GET',
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}` 
+        }
       });
       return await response.json();
     } catch (error) {
