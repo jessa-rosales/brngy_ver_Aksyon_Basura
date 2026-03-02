@@ -1,16 +1,16 @@
 import React, { useRef, useCallback, useState, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, Platform, FlatList, Image, ActivityIndicator, RefreshControl, TouchableOpacity, Modal
+  View, Text, StyleSheet, Platform, FlatList, Image, ActivityIndicator, RefreshControl, TouchableOpacity, Modal, Alert
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
-import { Clock, MapPin, AlertTriangle, CheckCircle2, Truck, User, Camera, Calendar, X, MoreVertical, Archive } from 'lucide-react-native';
+import { Clock, MapPin, AlertTriangle, CheckCircle2, Truck, User, Camera, Calendar, X, MoreVertical, Archive, Navigation } from 'lucide-react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { mobileService } from '../services/mobileService';
 
 import CustomAlert from '../components/CustomAlert';
 
-const UserReportsScreen = () => {
+const UserReportsScreen = ({ navigation }) => {
   const insets = useSafeAreaInsets();
   const listRef = useRef(null);
 
@@ -20,7 +20,6 @@ const UserReportsScreen = () => {
   const [activeFilter, setActiveFilter] = useState('My Reports');
   const [selectedImage, setSelectedImage] = useState(null);
 
-  // Custom Alert State
   const [customAlert, setCustomAlert] = useState({ 
     visible: false, title: '', message: '', type: 'info', 
     confirmText: 'OK', cancelText: 'Close', onConfirm: null, onCancel: null 
@@ -65,7 +64,6 @@ const UserReportsScreen = () => {
     }, [])
   );
 
-  // ✅ NEW: Process Archive function 
   const processArchive = async (reportId) => {
     try {
       const result = await mobileService.archiveReport(reportId);
@@ -88,6 +86,53 @@ const UserReportsScreen = () => {
     }
   };
 
+  // ✅ ADDED: Need Attention Toggle Logic
+  const handleAttentionPress = async (reportId) => {
+    setReports((prevReports) =>
+      prevReports.map((report) => {
+        if (report.report_id === reportId) {
+          const isCurrentlyActive = report.has_attended === true || report.has_attended === 'true' || report.has_attended === 1 || report.has_attended === 't';
+          const currentCount = parseInt(report.attention_count) || 0;
+          return {
+            ...report,
+            has_attended: !isCurrentlyActive,
+            attention_count: isCurrentlyActive ? Math.max(0, currentCount - 1) : currentCount + 1,
+          };
+        }
+        return report;
+      })
+    );
+
+    try {
+      const userData = await AsyncStorage.getItem('userProfile');
+      if (!userData) return;
+      const user = JSON.parse(userData);
+
+      const result = await mobileService.toggleAttention(reportId, user.user_id);
+      if (!result || !result.success) {
+        fetchReports(); 
+      }
+    } catch (error) {
+      fetchReports(); 
+    }
+  };
+
+  // ✅ ADDED: Navigate Logic
+  const handleNavigate = (item) => {
+    if (!item.latitude || !item.longitude) {
+      Alert.alert("Error", "Location coordinates not available.");
+      return;
+    }
+    navigation.navigate('LiveMapScreen', {
+      focusLocation: {
+        latitude: parseFloat(item.latitude),
+        longitude: parseFloat(item.longitude),
+      },
+      reportId: item.report_id,
+      targetReport: item 
+    });
+  };
+
   const filteredReports = reports
     .filter(report => {
       if (activeFilter === 'My Reports') return true;
@@ -96,18 +141,15 @@ const UserReportsScreen = () => {
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
   const ReportCard = ({ item, onImagePress }) => {
+    const fullName = item.reporter_name || "Citizen";
     const displayIssue = item.issue_type === 'Other' ? item.issue_type_other : item.issue_type;
     
-    // ✅ NEW: Local state to control the 3-dots popup menu
     const [menuVisible, setMenuVisible] = useState(false);
     
-    const formatFullDate = (date) => {
-        if (!date) return 'Processing...';
-        const d = new Date(date);
-        if (isNaN(d.getTime())) return 'Processing...';
-        return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) + 
-               ' at ' + d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-    };
+    // Date & Time formatting
+    const reportDate = new Date(item.created_at);
+    const formattedDate = isNaN(reportDate.getTime()) ? 'Processing...' : reportDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    const formattedTime = isNaN(reportDate.getTime()) ? '' : reportDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
 
     const calculateTimeTaken = (start, end) => {
         if (!start || !end) return null;
@@ -126,16 +168,18 @@ const UserReportsScreen = () => {
     const currentStatus = statusStyles[item.status] || statusStyles['Pending'];
 
     const driverDisplay = item.driver_name && item.driver_name !== 'Assigning Driver...' 
-        ? item.driver_name 
-        : (item.assigned_team_id ? `Team Assigned (#${item.assigned_team_id})` : 'System User');
+        ? item.driver_name : (item.assigned_team_id ? `Team Assigned (#${item.assigned_team_id})` : 'System User');
         
     const collectorDisplay = item.collector_name && item.collector_name !== 'Pending Collection'
-        ? item.collector_name 
-        : (item.photo_uploaded_by ? `Collector ID #${item.photo_uploaded_by}` : 'System User');
+        ? item.collector_name : (item.photo_uploaded_by ? `Collector ID #${item.photo_uploaded_by}` : 'System User');
 
-    const isResolvedOrHasEvidence = item.status === 'Resolved' || item.resolved_photo_url || item.photo_uploaded_by;
+    const isResolvedOrHasEvidence = Boolean(item.status === 'Resolved' || item.resolved_photo_url || item.photo_uploaded_by);
+    const canArchive = Boolean(item.status === 'Pending' || item.status === 'Resolved');
+    
+    // Attention data parsing
+    const isAttended = Boolean(item.has_attended === true || item.has_attended === 'true' || item.has_attended === 1 || item.has_attended === 't');
+    const attentionCount = parseInt(item.attention_count) || 0;
 
-    // ✅ NEW: Trigger confirmation alert before archiving
     const handleArchiveClick = () => {
       setMenuVisible(false);
       setCustomAlert({
@@ -154,72 +198,86 @@ const UserReportsScreen = () => {
 
     return (
       <View style={styles.reportCard}>
-        {/* Header */}
+        {/* ✅ UPDATED: User Profile Header */}
         <View style={styles.cardHeader}>
-          <View style={styles.issueRow}>
-            <View style={{flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1}}>
-              <Text style={styles.issueTypeText}>{displayIssue}</Text>
-              <View style={[styles.statusBadgeSmall, { backgroundColor: currentStatus.bg }]}>
-                <currentStatus.icon size={12} color={currentStatus.color} />
-                <Text style={[styles.statusTextSmall, { color: currentStatus.color }]}>{item.status}</Text>
-              </View>
+          <View style={styles.userInfo}>
+            <View style={styles.avatarCircle}>
+              {item.profile_picture ? (
+                <Image
+                  source={{ uri: mobileService.getImageUrl(item.profile_picture) }}
+                  style={styles.avatarImage}
+                />
+              ) : (
+                <User size={18} color="#94a3b8" />
+              )}
+            </View>
+            <Text style={styles.citizenNameText}>{fullName}</Text>
+          </View>
+
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <View style={styles.timeInfo}>
+              <Clock size={12} color="#94a3b8" />
+              <Text style={styles.dateText}>{formattedTime ? `${formattedDate} • ${formattedTime}` : formattedDate}</Text>
             </View>
             
-            {/* ✅ NEW: 3 Dots Icon for Menu */}
-            <TouchableOpacity 
-              style={{ padding: 4 }} 
-              onPress={() => setMenuVisible(!menuVisible)}
-            >
-              <MoreVertical size={20} color="#64748b" />
+            {/* 3 Dots Menu Button aligned correctly next to time */}
+            {canArchive ? (
+              <TouchableOpacity 
+                style={{ padding: 4, marginLeft: 8 }} 
+                onPress={() => setMenuVisible(!menuVisible)}
+              >
+                <MoreVertical size={20} color="#64748b" />
+              </TouchableOpacity>
+            ) : null}
+          </View>
+        </View>
+
+        {/* Dropdown Menu for Archive */}
+        {menuVisible ? (
+          <View style={styles.dropdownMenu}>
+            <TouchableOpacity style={styles.dropdownItem} onPress={handleArchiveClick}>
+              <Archive size={16} color="#EF4444" />
+              <Text style={styles.dropdownItemText}>Archive</Text>
             </TouchableOpacity>
           </View>
+        ) : null}
 
-          {/* ✅ NEW: Popup Dropdown Menu for Archive */}
-          {menuVisible && (
-            <View style={styles.dropdownMenu}>
-              <TouchableOpacity style={styles.dropdownItem} onPress={handleArchiveClick}>
-                <Archive size={16} color="#EF4444" />
-                <Text style={styles.dropdownItemText}>Archive</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-
-          <View style={styles.timeInfo}>
-            <Calendar size={12} color="#94a3b8" />
-            <Text style={styles.dateText}>Reported: {formatFullDate(item.created_at)}</Text>
-          </View>
-        </View>
-
-        {/* Initial Reported Photo */}
-        <View style={styles.imageContainer}>
-          <Text style={styles.imageLabel}>Reported Issue Photo:</Text>
-          <TouchableOpacity 
-            activeOpacity={0.8} 
-            onPress={() => onImagePress(mobileService.getImageUrl(item.photo_evidence_url || item.photo_url) || 'https://via.placeholder.com/400x250')}
-          >
-            <Image
-              source={{ uri: mobileService.getImageUrl(item.photo_evidence_url || item.photo_url) || 'https://via.placeholder.com/400x250' }}
-              style={styles.reportImage}
-              resizeMode="cover"
-            />
-          </TouchableOpacity>
-        </View>
+        {/* ✅ UPDATED: Full Width Image */}
+        <TouchableOpacity 
+          activeOpacity={0.8} 
+          onPress={() => onImagePress(mobileService.getImageUrl(item.photo_evidence_url || item.photo_url) || 'https://via.placeholder.com/400x250')}
+        >
+          <Image
+            source={{ uri: mobileService.getImageUrl(item.photo_evidence_url || item.photo_url) || 'https://via.placeholder.com/400x250' }}
+            style={styles.reportImage}
+            resizeMode="cover"
+          />
+        </TouchableOpacity>
 
         <View style={styles.cardContent}>
+          {/* ✅ UPDATED: Issue Type & Status below the image */}
+          <View style={styles.issueRow}>
+            <Text style={styles.issueTypeText}>{displayIssue}</Text>
+            <View style={[styles.statusBadgeSmall, { backgroundColor: currentStatus.bg }]}>
+              <currentStatus.icon size={12} color={currentStatus.color} />
+              <Text style={[styles.statusTextSmall, { color: currentStatus.color }]}>{item.status}</Text>
+            </View>
+          </View>
+
           <View style={styles.locationRow}>
             <MapPin size={14} color="#64748b" />
             <Text style={styles.locationText} numberOfLines={2}>{item.location_address}</Text>
           </View>
 
-          {item.description ? (
+          {Boolean(item.description) ? (
             <View style={styles.descriptionBox}>
-              <Text style={styles.descriptionLabel}>Your Description:</Text>
+              <Text style={styles.descriptionLabel}>Description:</Text>
               <Text style={styles.descriptionText}>{item.description}</Text>
             </View>
           ) : null}
 
-          {/* IN PROGRESS VIEW */}
-          {item.status === 'In Progress' && (
+          {/* STATUS VIEWS */}
+          {item.status === 'In Progress' ? (
             <View style={styles.progressBox}>
               <Text style={styles.progressTitle}>Dispatch Status</Text>
               <View style={styles.teamRow}>
@@ -227,10 +285,9 @@ const UserReportsScreen = () => {
                 <Text style={styles.teamText}>Assigned Driver: <Text style={{fontWeight: '700'}}>{driverDisplay}</Text></Text>
               </View>
             </View>
-          )}
+          ) : null}
 
-          {/* RESOLVED VIEW */}
-          {isResolvedOrHasEvidence && (
+          {isResolvedOrHasEvidence ? (
             <View style={styles.resolvedBox}>
               <View style={styles.resolvedHeaderRow}>
                   <Text style={styles.resolvedTitle}>Resolution Details</Text>
@@ -279,7 +336,38 @@ const UserReportsScreen = () => {
                 </Text>
               </View>
             </View>
-          )}
+          ) : null}
+        </View>
+
+        {/* ✅ ADDED: Card Actions Row (Need Attention & Navigate) */}
+        <View style={styles.cardActionsRow}>
+          <TouchableOpacity
+            activeOpacity={0.7}
+            style={[
+              styles.attentionBtn,
+              isAttended && styles.attentionBtnActive
+            ]}
+            onPress={() => handleAttentionPress(item.report_id)}
+          >
+            <AlertTriangle
+              size={18}
+              color={isAttended ? "#FFFFFF" : "#EF4444"}
+            />
+            <Text style={[
+              styles.attentionText,
+              isAttended && styles.attentionTextActive
+            ]}>
+              {isAttended ? 'Attended' : 'Need Attention'} {attentionCount > 0 ? `(${attentionCount})` : ''}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.navigateBtnSmall}
+            onPress={() => handleNavigate(item)}
+          >
+            <Navigation size={18} color="#fff" />
+            <Text style={styles.navigateTextSmall}>Navigate</Text>
+          </TouchableOpacity>
         </View>
       </View>
     );
@@ -319,29 +407,29 @@ const UserReportsScreen = () => {
         />
       )}
 
-      {/* Full Screen Image Modal */}
-      <Modal
-        visible={!!selectedImage}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setSelectedImage(null)}
-      >
-        <View style={styles.modalBackground}>
-          <TouchableOpacity 
-            style={[styles.closeButton, { top: Platform.OS === 'ios' ? insets.top + 10 : 20 }]} 
-            onPress={() => setSelectedImage(null)}
-          >
-            <X size={30} color="#FFFFFF" />
-          </TouchableOpacity>
-          <Image 
-            source={{ uri: selectedImage }} 
-            style={styles.fullScreenImage} 
-            resizeMode="contain" 
-          />
-        </View>
-      </Modal>
+      {Boolean(selectedImage) ? (
+        <Modal
+          visible={true}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={() => setSelectedImage(null)}
+        >
+          <View style={styles.modalBackground}>
+            <TouchableOpacity 
+              style={[styles.closeButton, { top: Platform.OS === 'ios' ? insets.top + 10 : 20 }]} 
+              onPress={() => setSelectedImage(null)}
+            >
+              <X size={30} color="#FFFFFF" />
+            </TouchableOpacity>
+            <Image 
+              source={{ uri: selectedImage }} 
+              style={styles.fullScreenImage} 
+              resizeMode="contain" 
+            />
+          </View>
+        </Modal>
+      ) : null}
 
-      {/* Custom Alert Overlay */}
       <CustomAlert 
         visible={customAlert.visible}
         title={customAlert.title}
@@ -366,17 +454,29 @@ const styles = StyleSheet.create({
   filterTabText: { fontSize: 11, fontWeight: '700', color: '#64748b' },
   activeTabText: { color: '#fff' },
   listContainer: { padding: 15 },
-  reportCard: { backgroundColor: '#F6FBF6', borderRadius: 25, marginBottom: 20, elevation: 3 },
-  cardHeader: { padding: 15, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', position: 'relative' },
-  issueRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, zIndex: 1 },
-  issueTypeText: { fontSize: 18, fontWeight: '900', color: '#0F172A' },
+  
+  // ✅ UPDATED REPORT CARD STYLES
+  reportCard: { backgroundColor: '#F6FBF6', borderRadius: 25, marginBottom: 20, elevation: 3, overflow: 'hidden' },
+  
+  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 15, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', zIndex: 2 },
+  userInfo: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  avatarCircle: { width: 34, height: 34, borderRadius: 17, backgroundColor: '#F8FAFC', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#E2E8F0', overflow: 'hidden' },
+  avatarImage: { width: '100%', height: '100%' },
+  citizenNameText: { fontSize: 14, fontWeight: '800', color: '#1E293B' },
+  timeInfo: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  dateText: { fontSize: 11, color: '#94a3b8', fontWeight: '600' },
+  
+  reportImage: { width: '100%', height: 230, backgroundColor: '#F1F5F9' },
+  
+  cardContent: { padding: 15, paddingBottom: 10 }, 
+  issueRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  issueTypeText: { fontSize: 18, fontWeight: '900', color: '#0F172A', flex: 1 },
   statusBadgeSmall: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20 },
   statusTextSmall: { fontSize: 10, fontWeight: '800', textTransform: 'uppercase' },
   
-  // ✅ NEW: Styles for the Dropdown Menu
   dropdownMenu: {
     position: 'absolute',
-    top: 45,
+    top: 55, // Adjusted to sit nicely below the header dots
     right: 15,
     backgroundColor: '#fff',
     borderRadius: 12,
@@ -386,7 +486,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.15,
     shadowRadius: 8,
-    zIndex: 100, // Ensures it appears above other elements
+    zIndex: 100, 
   },
   dropdownItem: {
     flexDirection: 'row',
@@ -395,26 +495,28 @@ const styles = StyleSheet.create({
     paddingHorizontal: 15,
     gap: 8,
   },
-  dropdownItemText: {
-    color: '#EF4444',
-    fontWeight: '700',
-    fontSize: 14,
-  },
+  dropdownItemText: { color: '#EF4444', fontWeight: '700', fontSize: 14 },
 
-  timeInfo: { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  dateText: { fontSize: 11, color: '#94a3b8', fontWeight: '600' },
-  imageContainer: { paddingHorizontal: 15, paddingTop: 10 },
-  imageLabel: { fontSize: 10, fontWeight: '800', color: '#94a3b8', marginBottom: 5, textTransform: 'uppercase' },
-  reportImage: { width: '100%', height: 180, borderRadius: 12, backgroundColor: '#F1F5F9' },
-  cardContent: { padding: 15 },
-  locationRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 5, marginBottom: 15 },
+  locationRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 5, marginBottom: 12 },
   locationText: { fontSize: 13, color: '#475569', fontWeight: '600', flex: 1, lineHeight: 18 },
-  descriptionBox: { backgroundColor: '#F1F5F9', padding: 12, borderRadius: 12, marginBottom: 15 },
-  descriptionLabel: { fontSize: 11, fontWeight: '800', color: '#64748b', marginBottom: 4, textTransform: 'uppercase' },
+  
+  descriptionBox: { backgroundColor: '#F8FAFC', padding: 12, borderRadius: 15, borderLeftWidth: 4, borderLeftColor: '#CBD5E1', marginBottom: 15 },
+  descriptionLabel: { fontSize: 11, fontWeight: '800', color: '#475569', marginBottom: 2, textTransform: 'uppercase' },
   descriptionText: { fontSize: 14, color: '#334155', lineHeight: 20 },
-  progressBox: { backgroundColor: '#FEF3C7', padding: 15, borderRadius: 15, borderWidth: 1, borderColor: '#FDE68A' },
+  
+  // ✅ NEW BUTTON STYLES
+  cardActionsRow: { flexDirection: 'row', padding: 15, paddingTop: 0, gap: 10 },
+  attentionBtn: { flex: 1.3, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, height: 48, borderRadius: 14, borderWidth: 1.5, borderColor: '#FEE2E2', backgroundColor: '#FFF' },
+  attentionBtnActive: { backgroundColor: '#EF4444', borderColor: '#EF4444' },
+  attentionText: { color: '#EF4444', fontSize: 12, fontWeight: '800' },
+  attentionTextActive: { color: '#FFF' },
+  navigateBtnSmall: { flex: 0.7, backgroundColor: '#1B5E20', height: 48, borderRadius: 14, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8, elevation: 2 },
+  navigateTextSmall: { color: '#fff', fontSize: 14, fontWeight: '800' },
+
+  progressBox: { backgroundColor: '#FEF3C7', padding: 15, borderRadius: 15, borderWidth: 1, borderColor: '#FDE68A', marginBottom: 15 },
   progressTitle: { fontSize: 12, fontWeight: '800', color: '#D97706', marginBottom: 8, textTransform: 'uppercase' },
-  resolvedBox: { backgroundColor: '#ECFDF5', padding: 15, borderRadius: 15, borderWidth: 1, borderColor: '#A7F3D0' },
+  
+  resolvedBox: { backgroundColor: '#ECFDF5', padding: 15, borderRadius: 15, borderWidth: 1, borderColor: '#A7F3D0', marginBottom: 15 },
   resolvedHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
   resolvedTitle: { fontSize: 12, fontWeight: '800', color: '#059669', textTransform: 'uppercase' },
   responseBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(5, 150, 105, 0.1)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, gap: 4 },
