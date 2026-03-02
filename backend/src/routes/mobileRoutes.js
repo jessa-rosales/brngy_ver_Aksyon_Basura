@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { getMobileAssignment, updateVehicleLocation, saveCollectionRecord, confirmBinCollection, getActiveTrackingRoutes, getAllReports } = require('../controllers/mobileController');
+const { getMobileAssignment, updateVehicleLocation, saveCollectionRecord, confirmBinCollection, getActiveTrackingRoutes, getAllReports, archiveReport, getArchivedReports } = require('../controllers/mobileController');
 const authorize = require("../middleware/auth"); 
 const uploadEvidence = require('../middleware/collectionUpload');
 
@@ -20,5 +20,9 @@ router.get('/tracking-routes', authorize, getActiveTrackingRoutes);
 // ✅ This route is what FeedScreen and UserReportsScreen call
 // It needs to point to the new getAllReports logic we wrote
 router.get('/all-reports', authorize, getAllReports);
+
+router.post('/archive-report', authorize, archiveReport);
+
+router.get('/archived-reports', authorize, getArchivedReports);
 
 module.exports = router;
