@@ -1,25 +1,34 @@
 const express = require('express');
 const router = express.Router();
-const { getMobileAssignment, updateVehicleLocation, saveCollectionRecord, confirmBinCollection, getActiveTrackingRoutes, getAllReports, archiveReport, getArchivedReports } = require('../controllers/mobileController');
+const { getMobileAssignment, startDuty, endDuty, updateVehicleLocation, saveCollectionRecord, confirmBinCollection, getActiveTrackingRoutes, getAllReports, getCollectionHistory, getArchivedCollectionHistory, archiveReport, getArchivedReports } = require('../controllers/mobileController');
 const authorize = require("../middleware/auth"); 
 const uploadEvidence = require('../middleware/collectionUpload');
 
 router.get('/assignment/:userId', authorize, getMobileAssignment);
 
-// Add this under your other routes in mobileRoutes.js
+// ✅ Duty Management Routes
+router.post('/start-duty', authorize, startDuty);
+router.put('/end-duty', authorize, endDuty);
+
+// For vehicle tracking live
 router.put('/vehicle-location', authorize, updateVehicleLocation);
 
-// 👇 Add the multer middleware here. 'photo' is the field name we will use in React Native.
+//  the multer middleware for photo
 router.post('/evidence', authorize, uploadEvidence.single('photo'), saveCollectionRecord);
 
-// 🚚 NEW: Route for the driver to confirm collection
+// Route for the driver to confirm collection
 router.put('/confirm-collection', authorize, confirmBinCollection);
 
 router.get('/tracking-routes', authorize, getActiveTrackingRoutes);
 
-// ✅ This route is what FeedScreen and UserReportsScreen call
-// It needs to point to the new getAllReports logic we wrote
+//This route is what FeedScreen and UserReportsScreen call
 router.get('/all-reports', authorize, getAllReports);
+
+// This route for My Collection History 
+router.get('/collection-history/:userId', authorize, getCollectionHistory);
+
+//Route for Staff Archive History (Collection logs + Resolved reports)
+router.get('/collection-history-archived', authorize, getArchivedCollectionHistory);
 
 router.post('/archive-report', authorize, archiveReport);
 
