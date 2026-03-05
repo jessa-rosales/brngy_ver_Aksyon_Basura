@@ -95,6 +95,54 @@ export const driverService = {
     }
   },
 
+  // ✅ NEW: Start Duty Session
+  // This triggers the insertion into duty_logs and sets is_on_duty = true
+  startDuty: async (userId, vehicleId) => {
+    try {
+      const token = await AsyncStorage.getItem('token');
+      const response = await fetch(`${API_URL}/mobile/start-duty`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify({ userId, vehicleId }),
+      });
+
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message || "Failed to start duty");
+      return result;
+    } catch (error) {
+      console.error("Start Duty Service Error:", error);
+      throw error;
+    }
+  },
+
+  // ✅ NEW: End Duty Session
+  // This saves the final coordinates and "parks" the vehicle icon
+  endDuty: async (userId, lat, lng) => {
+    try {
+      const token = await AsyncStorage.getItem('token');
+      const response = await fetch(`${API_URL}/api/mobile/end-duty`, { // Fixed path to match your route
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify({ userId, lat, lng }),
+      });
+
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message || "Failed to end duty");
+      return result;
+    } catch (error) {
+      console.error("End Duty Service Error:", error);
+      throw error;
+    }
+  },
+
  // 📸 UPDATED: Upload the evidence using FormData for Multer
  uploadEvidence: async (binId, taskId, photoUri) => {
     try {

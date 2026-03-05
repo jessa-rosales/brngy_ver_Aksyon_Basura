@@ -381,6 +381,35 @@ toggleAttention: async (reportId, userId) => {
     }
   },
 
+  //For MyCollectionHistory in the Profile Screen
+  getCollectionHistory: async (userId) => {
+    try {
+      let token = await AsyncStorage.getItem('userToken') || await AsyncStorage.getItem('token'); 
+      const response = await fetch(`${API_URL}/mobile/collection-history/${userId}`, {
+        method: 'GET',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      return await response.json();
+    } catch (error) {
+      console.error("Collection History Service Error:", error);
+      return { success: false, message: 'Network error' };
+    }
+  },
+
+  getArchivedCollectionHistory: async () => {
+  try {
+    let token = await AsyncStorage.getItem('userToken') || await AsyncStorage.getItem('token'); 
+    const response = await fetch(`${API_URL}/mobile/collection-history-archived`, {
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    return await response.json();
+  } catch (error) {
+    console.error("Archive Service Error:", error);
+    return { success: false, message: 'Network error' };
+  }
+},
+
 //For Archive Center in the Profile Screen
 archiveReport: async (reportId) => {
     try {
