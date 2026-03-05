@@ -4,11 +4,11 @@
     "slug": "aksyon-basura",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/logo3.png",
+    "icon": "./assets/aksyon_basura_490x490.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/logo3.png",
+      "image": "./assets/aksyon_basura_490x490.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
@@ -17,7 +17,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/logo3.png",
+        "foregroundImage": "./assets/aksyon_basura_490x490.png",
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
@@ -34,7 +34,7 @@
       "package": "com.jejerogo.mobileapp"
     },
     "web": {
-      "favicon": "./assets/logo3.png"
+      "favicon": "./assets/aksyon_basura_490x490.png"
     },
     "plugins": [
       "@react-native-community/datetimepicker",
