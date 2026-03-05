@@ -97,6 +97,8 @@ const assignmentController = {
         LEFT JOIN public.vehicles v ON a.vehicle_id = v.vehicle_id
         LEFT JOIN public.zones z ON a.zone_id = z.zone_id
         WHERE a.status = 'Active' 
+          AND a.is_archived = false -- ✅ STRICT FIX: Excludes archived tasks/schedules
+          AND z.is_archived = false -- ✅ STRICT FIX: Excludes archived zones
           AND (a.driver_id = $1 OR EXISTS (
               SELECT 1 FROM public.task_collectors tc 
               WHERE tc.task_id = a.task_id AND tc.collector_id = $1
@@ -115,9 +117,9 @@ const assignmentController = {
       console.error("Staff Schedule Error:", err);
       res.status(500).json({ error: "Internal Server Error" });
     }
-},
+  },
 
-deleteAssignment: async (req, res) => {
+  deleteAssignment: async (req, res) => {
     try {
       const { id } = req.params;
       const archivedTask = await assignmentModel.archive(id);
