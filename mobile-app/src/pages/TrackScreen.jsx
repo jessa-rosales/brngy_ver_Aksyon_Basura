@@ -4,8 +4,6 @@ import { ChevronDown, MapPin, Truck, Clock, CheckCircle2, AlertCircle, Camera, N
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { mobileService } from '../services/mobileService'; 
-
-// ✅ IMPORT YOUR CUSTOM ALERT COMPONENT
 import CustomAlert from '../components/CustomAlert';
 
 const { width } = Dimensions.get('window');
@@ -20,7 +18,7 @@ const TrackScreen = ({ navigation }) => {
   
   const [evidencePhoto, setEvidencePhoto] = useState(null);
 
-  // ✅ NEW: State to control the Custom Alert
+  // State to control the Custom Alert
   const [customAlert, setCustomAlert] = useState({ visible: false, title: '', message: '', type: 'info' });
 
   const isToday = (dateString) => {
@@ -32,7 +30,7 @@ const TrackScreen = ({ navigation }) => {
            itemDate.getFullYear() === today.getFullYear();
   };
 
-  // NEW TIME CHECKER: Determines if the timestamp is within the last 5 hours
+  // Determines if the timestamp is within the last 5 hours
   const isWithin5Hours = (dateString) => {
     if (!dateString) return false;
     const itemTime = new Date(dateString).getTime();
@@ -155,7 +153,7 @@ const TrackScreen = ({ navigation }) => {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#10B981']} />}
       >
         
-        {/* --- HEADER & DROPDOWN --- */}
+        {/* HEADER & DROPDOWN */}
         <View style={styles.headerSection}>
           <Text style={styles.screenTitle}>Waste Monitoring</Text>
           <Text style={styles.subTitle}>Select a zone to view active trucks</Text>
@@ -182,7 +180,7 @@ const TrackScreen = ({ navigation }) => {
           </View>
         ) : (
           <>
-            {/* --- DYNAMIC CARD OVERVIEW --- */}
+            {/* DYNAMIC CARD OVERVIEW */}
             <View style={styles.card}>
                 {isAllZones ? (
                     <View style={{ alignItems: 'center', paddingVertical: 10 }}>
@@ -247,7 +245,7 @@ const TrackScreen = ({ navigation }) => {
                 </TouchableOpacity>
             </View>
 
-            {/* --- KPI SECTION --- */}
+            {/* KPI SECTION */}
             <View style={styles.kpiContainer}>
                 <View style={[styles.kpiBox, { backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' }]}>
                     <Trash2 size={24} color="#059669" style={styles.kpiIcon} />
@@ -268,7 +266,7 @@ const TrackScreen = ({ navigation }) => {
                 </View>
             </View>
 
-            {/* --- COLLECTION ZONE / PROOF LIST --- */}
+            {/* COLLECTION ZONE / PROOF LIST*/}
             <Text style={styles.sectionHeader}>Collection Log</Text>
             
             <View style={styles.listContainer}>
@@ -316,7 +314,7 @@ const TrackScreen = ({ navigation }) => {
                                             ]}
                                             onPress={() => {
                                                 if (!item.has_photo) {
-                                                    // ✅ REPLACED: Using CustomAlert instead of Alert.alert
+                                                    //  CustomAlert instead of Alert.alert
                                                     setCustomAlert({
                                                       visible: true,
                                                       title: "No Photo Available",
@@ -331,7 +329,7 @@ const TrackScreen = ({ navigation }) => {
                                                 if (url && typeof url === 'string') {
                                                     setEvidencePhoto(mobileService.getImageUrl(url));
                                                 } else {
-                                                    // ✅ REPLACED: Using CustomAlert instead of Alert.alert
+                                                    //  Using CustomAlert instead of Alert.alert
                                                     setCustomAlert({
                                                       visible: true,
                                                       title: "Missing URL",
@@ -424,7 +422,7 @@ const TrackScreen = ({ navigation }) => {
         </View>
       </Modal>
 
-      {/* ✅ NEW: CUSTOM ALERT OVERLAY */}
+      {/* CUSTOM ALERT OVERLAY */}
       <CustomAlert 
         visible={customAlert.visible}
         title={customAlert.title}
@@ -445,6 +443,11 @@ const getStatusIcon = (status) => {
     if (status === 'Pending') return <View style={[styles.statusBadge, {backgroundColor: '#FFFBEB'}]}><Text style={{color: '#D97706', fontSize: 10, fontWeight: '700'}}>PENDING</Text></View>;
     return <View style={[styles.statusBadge, {backgroundColor: '#FEF2F2'}]}><Text style={{color: '#DC2626', fontSize: 10, fontWeight: '700'}}>MISSED</Text></View>;
 };
+
+
+
+
+
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#E3F3DF' },

@@ -273,7 +273,7 @@ const ScheduleScreen = () => {
           </View>
         ) : (
           <>
-            {/* 1. ONGOING GROUP */}
+            {/*  ONGOING GROUP */}
             {categorizedAssignments.active.length > 0 && (
               <View>
                 <View style={styles.categoryHeader}><Text style={styles.categoryTitle}>Ongoing Duty</Text></View>
@@ -282,7 +282,7 @@ const ScheduleScreen = () => {
               </View>
             )}
 
-            {/* 2. UPCOMING GROUP (This is where your 1:30 AM shift will go if it is currently 12:30 AM) */}
+            {/* UPCOMING GROUP (This is where your 1:30 AM shift will go if it is currently 12:30 AM) */}
             {categorizedAssignments.upcoming.length > 0 && (
               <View>
                 <View style={styles.categoryHeader}><Text style={[styles.categoryTitle, {color: '#1D4ED8'}]}>Upcoming Schedule</Text></View>
@@ -290,7 +290,7 @@ const ScheduleScreen = () => {
               </View>
             )}
 
-            {/* 3. COMPLETED/OTHER */}
+            {/* COMPLETED/OTHER */}
             {selectedDate.toDateString() !== new Date().toDateString() ? (
               categorizedAssignments.allSorted.map((item) => <AssignmentCard key={item.id} item={item} status="FUTURE" />)
             ) : (

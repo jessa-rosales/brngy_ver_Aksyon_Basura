@@ -6,7 +6,7 @@ import {
 import MapboxGL from '@rnmapbox/maps';
 import { 
   Navigation, CheckCircle2, Trash2, ArrowRight, Maximize2, 
-  Clock, Truck, ChevronRight, Layers, Map as MapIcon, AlertTriangle, LocateFixed, Target, Camera 
+  Clock, Truck, ChevronRight, Layers, Map as MapIcon, AlertTriangle, LocateFixed, Target, Camera, Power
 } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets, SafeAreaView } from 'react-native-safe-area-context';
@@ -79,9 +79,7 @@ const RenderReportMarker = ({ isNext, showLabel, issueType, isCompleted }) => (
 const DriverRouteScreen = ({ navigation, route }) => {
   const insets = useSafeAreaInsets();
   
-  const userRole = route.params?.role || 'driver';
-  const isDriver = userRole === 'driver';
-
+  const [isDriver, setIsDriver] = useState(route.params?.role === 'driver');
   const [viewMode, setViewMode] = useState('overview'); 
   const [userData, setUserData] = useState(null);
   const [assignedZones, setAssignedZones] = useState([]); 
@@ -95,6 +93,10 @@ const DriverRouteScreen = ({ navigation, route }) => {
   const [isTracking, setIsTracking] = useState(true);
   const [focusedReportId, setFocusedReportId] = useState(null);
   const mapCameraRef = useRef(null); 
+
+  const [isOnDuty, setIsOnDuty] = useState(false);
+  const [parkedLocation, setParkedLocation] = useState(null);
+  const [isTogglingDuty, setIsTogglingDuty] = useState(false);
 
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -128,7 +130,6 @@ const DriverRouteScreen = ({ navigation, route }) => {
     return () => clearInterval(interval);
   }, []);
 
-  // ✅ FIXED: Navigation & Zoom logic
   useEffect(() => {
     if (route.params?.targetLocation) {
       const { lat, lng, reportId } = route.params.targetLocation;
@@ -137,7 +138,6 @@ const DriverRouteScreen = ({ navigation, route }) => {
       setIsTracking(false);
       setViewMode('navigation');
 
-      // Add a slight delay to allow the map to render if switching from overview mode
       setTimeout(() => {
         if (mapCameraRef.current) {
           mapCameraRef.current.setCamera({
@@ -150,7 +150,7 @@ const DriverRouteScreen = ({ navigation, route }) => {
 
       navigation.setParams({ targetLocation: null });
     }
-  }, [route.params?.targetLocation]); // removed viewMode dependency so it doesn't clash
+  }, [route.params?.targetLocation]); 
 
   useEffect(() => {
     if (route.params?.evidenceSubmittedForBin) {
@@ -196,6 +196,9 @@ const DriverRouteScreen = ({ navigation, route }) => {
       if (!profileData) return;
       const user = JSON.parse(profileData);
       setUserData(user);
+
+      const roleStr = String(user.role_name || user.role || user.account_type || route.params?.role || '').toLowerCase();
+      setIsDriver(roleStr === 'driver');
 
       const assignments = await driverService.getAssignedRoute(user.user_id);
       
@@ -321,7 +324,6 @@ const DriverRouteScreen = ({ navigation, route }) => {
   }, [activeZoneId, assignedZones]);
 
   useEffect(() => {
-    // Only zoom to bounds if there's no target location being navigated to
     if (viewMode === 'navigation' && cameraBounds && mapCameraRef.current && !route.params?.targetLocation) {
       mapCameraRef.current.setCamera({
         bounds: {
@@ -347,7 +349,7 @@ const DriverRouteScreen = ({ navigation, route }) => {
   useEffect(() => {
     let syncInterval;
     
-    if (isDriver && userLoc && currentMission?.vehicle_id) {
+    if (isDriver && isOnDuty && userLoc && currentMission?.vehicle_id) {
       syncInterval = setInterval(() => {
         driverService.updateTruckLocation(
           currentMission.vehicle_id, 
@@ -360,7 +362,73 @@ const DriverRouteScreen = ({ navigation, route }) => {
     return () => {
       if (syncInterval) clearInterval(syncInterval);
     };
-  }, [isDriver, userLoc, currentMission]);
+  }, [isDriver, isOnDuty, userLoc, currentMission]);
+
+  const handleToggleDuty = async () => {
+    if (!userData || isTogglingDuty) return;
+    setIsTogglingDuty(true);
+    
+    try {
+        const token = await AsyncStorage.getItem('token');
+        const dummyUrl = mobileService.getImageUrl('/dummy');
+        const baseUrl = dummyUrl.replace('/dummy', '/api');
+
+        if (!isOnDuty) {
+            if (!currentMission?.vehicle_id) {
+                Alert.alert("No Vehicle", "You don't have an assigned vehicle for the current mission.");
+                setIsTogglingDuty(false);
+                return;
+            }
+            
+            const response = await fetch(`${baseUrl}/mobile/start-duty`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: userData.user_id || userData.id, vehicleId: currentMission.vehicle_id })
+            });
+            const data = await response.json();
+            
+            if (data.success) {
+                setIsOnDuty(true);
+                setParkedLocation(null); 
+                Alert.alert("Duty Started", "Live location sharing activated.");
+            } else {
+                Alert.alert("Error", data.message || "Failed to start duty.");
+            }
+        } else {
+            if (!userLoc) {
+                Alert.alert("Warning", "Location not found to log parked position.");
+                setIsTogglingDuty(false);
+                return;
+            }
+            
+            // ✅ FIXED: Pass vehicleId so the backend updates the vehicles table
+            const response = await fetch(`${baseUrl}/mobile/end-duty`, {
+                method: 'PUT',
+                headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                  userId: userData.user_id || userData.id, 
+                  vehicleId: currentMission?.vehicle_id,
+                  lat: userLoc[1], 
+                  lng: userLoc[0] 
+                })
+            });
+            const data = await response.json();
+            
+            if (data.success) {
+                setIsOnDuty(false);
+                setParkedLocation(userLoc); 
+                Alert.alert("Duty Ended", "Location sharing paused. Vehicle parked.");
+            } else {
+                Alert.alert("Error", data.message || "Failed to end duty.");
+            }
+        }
+    } catch (error) {
+        console.error("Toggle Duty Error:", error);
+        Alert.alert("Error", "Check your internet connection.");
+    } finally {
+        setIsTogglingDuty(false);
+    }
+  };
 
   const missionBins = currentMission?.bins || [];
 
@@ -461,7 +529,6 @@ const DriverRouteScreen = ({ navigation, route }) => {
           },
           body: JSON.stringify({ 
             bin_id: nearestStop.targetId,
-            // ✅ FIXED: Safely grab the correct user ID just like we did in the Camera Screen
             driver_id: userData.user_id || userData.id 
           })
         });
@@ -506,13 +573,54 @@ const DriverRouteScreen = ({ navigation, route }) => {
     };
   }, [userLoc, nearestStop]);
 
+  // ✅ SAFELY PARSED TRUCK COORDINATES (Fixes silent Mapbox crash)
+  const truckLng = currentMission?.truck_lng ? Number(currentMission.truck_lng) : null;
+  const truckLat = currentMission?.truck_lat ? Number(currentMission.truck_lat) : null;
+
+  // ✅ BULLETPROOF TRUCK COORDS LOGIC
+  const truckCoords = useMemo(() => {
+    if (isDriver) {
+      // Drivers see themselves moving when on duty...
+      if (isOnDuty && userLoc) return userLoc;
+      
+      // ...but if they are off duty, they see where the truck is currently parked
+      if (truckLng && truckLat) return [truckLng, truckLat];
+      if (parkedLocation) return parkedLocation;
+      
+      return userLoc; // Fallback
+    } else {
+      // Collectors STRICTLY ONLY see the remote truck from the database. Never their own phone GPS.
+      if (truckLng && truckLat) return [truckLng, truckLat];
+      return null;
+    }
+  }, [isDriver, isOnDuty, userLoc, parkedLocation, truckLng, truckLat]);
+
+  // ✅ SEPARATE USE-EFFECT FOR REMOTE/PARKED TRACKING
+  useEffect(() => {
+    if ((!isDriver || !isOnDuty) && isTracking && truckCoords && viewMode === 'navigation' && mapCameraRef.current) {
+      mapCameraRef.current.setCamera({
+        centerCoordinate: truckCoords,
+        animationDuration: 1000,
+      });
+    }
+  }, [isDriver, isOnDuty, isTracking, truckCoords, viewMode]);
+
   const handleRecenter = () => {
     setIsTracking(true);
     setFocusedReportId(null);
 
-    if (userLoc && mapCameraRef.current) {
+    // If driver and on duty, center on phone
+    if (isDriver && isOnDuty && userLoc && mapCameraRef.current) {
       mapCameraRef.current.setCamera({
         centerCoordinate: userLoc,
+        zoomLevel: 16,
+        animationDuration: 1000,
+      });
+    } 
+    // If collector or off-duty driver, center on the TRUCK
+    else if ((!isDriver || !isOnDuty) && truckCoords && mapCameraRef.current) {
+      mapCameraRef.current.setCamera({
+        centerCoordinate: truckCoords,
         zoomLevel: 16,
         animationDuration: 1000,
       });
@@ -526,12 +634,13 @@ const DriverRouteScreen = ({ navigation, route }) => {
     }
   };
 
-  const truckCoords = isDriver 
-    ? userLoc 
-    : (currentMission?.truck_lng && currentMission?.truck_lat 
-        ? [currentMission.truck_lng, currentMission.truck_lat] 
-        : null);
-  
+  const getTruckPuckStyle = () => {
+    if (isDriver) {
+      return [styles.customTruckPuck, !isOnDuty && { borderColor: '#94a3b8' }];
+    }
+    return [styles.customTruckPuck, { borderColor: '#3B82F6' }];
+  };
+
   const renderMapFeatures = (isNavigationMode) => {
     const currentView = isNavigationMode ? 'nav' : 'overview';
 
@@ -619,6 +728,34 @@ const DriverRouteScreen = ({ navigation, route }) => {
               </TouchableOpacity>
           </View>
 
+          {isDriver && (
+              <View style={styles.dutyContainer}>
+                  <View style={styles.dutyTextCol}>
+                      <Text style={styles.dutyTitle}>{isOnDuty ? 'Currently On Duty' : 'Currently Off Duty'}</Text>
+                      <Text style={styles.dutySub}>
+                          {isOnDuty ? 'Location sharing is active' : 'Location sharing is paused'}
+                      </Text>
+                  </View>
+                  <TouchableOpacity
+                      activeOpacity={0.8}
+                      style={[styles.dutyToggleBtn, isOnDuty ? styles.dutyBtnActive : styles.dutyBtnInactive]}
+                      onPress={handleToggleDuty}
+                      disabled={isTogglingDuty}
+                  >
+                      {isTogglingDuty ? (
+                          <ActivityIndicator size="small" color={isOnDuty ? '#EF4444' : '#10B981'} />
+                      ) : (
+                          <>
+                              <Power size={14} color={isOnDuty ? '#EF4444' : '#10B981'} style={{marginRight: 4}} />
+                              <Text style={[styles.dutyToggleText, isOnDuty ? styles.dutyToggleTextActive : {}]}>
+                                  {isOnDuty ? 'END DUTY' : 'START DUTY'}
+                              </Text>
+                          </>
+                      )}
+                  </TouchableOpacity>
+              </View>
+          )}
+
           <View style={styles.dashCard}>
             <View style={styles.vehicleInfoRow}>
                 <View style={styles.truckIconCircle}><Truck size={22} color="#10B981" /></View>
@@ -664,12 +801,13 @@ const DriverRouteScreen = ({ navigation, route }) => {
                  
                  <MapboxGL.UserLocation 
                    visible={false} 
+                   showsUserHeadingIndicator={false}
                    onUpdate={(location) => setUserLoc([location.coords.longitude, location.coords.latitude])} 
                  />
                  
                  {truckCoords && (
                    <MapboxGL.MarkerView id="shared-truck-overview" coordinate={truckCoords}>
-                     <View style={styles.customTruckPuck}>
+                     <View style={getTruckPuckStyle()}>
                        <Image 
                          source={require('../../assets/truck.png')} 
                          style={styles.truckIconImage}
@@ -739,9 +877,11 @@ const DriverRouteScreen = ({ navigation, route }) => {
         </ScrollView>
         <View style={[styles.stickyFooter, { paddingBottom: insets.bottom + 15 }]}>
             <TouchableOpacity activeOpacity={0.9} onPress={() => { setIsTracking(false); setViewMode('navigation'); }}>
-              <LinearGradient colors={['#10B981', '#059669']} start={{x:0, y:0}} end={{x:1, y:0}} style={styles.engageBtn}>
+              <LinearGradient colors={isDriver ? (isOnDuty ? ['#10B981', '#059669'] : ['#64748b', '#475569']) : ['#3B82F6', '#2563EB']} start={{x:0, y:0}} end={{x:1, y:0}} style={styles.engageBtn}>
                  <Navigation size={22} color="white" style={{marginRight: 10}} />
-                 <Text style={styles.engageBtnText}>START COLLECTION</Text>
+                 <Text style={styles.engageBtnText}>
+                    {isDriver ? (isOnDuty ? 'START COLLECTION' : 'PREVIEW ROUTE COLLECTION') : 'VIEW MISSION ROUTE'}
+                 </Text>
               </LinearGradient>
             </TouchableOpacity>
         </View>
@@ -762,11 +902,19 @@ const DriverRouteScreen = ({ navigation, route }) => {
           styleURL={mapType === 'hybrid' ? MapboxGL.StyleURL.SatelliteStreet : MapboxGL.StyleURL.Street}
           logoEnabled={false}
           attributionEnabled={false}
+          onCameraChanged={(e) => {
+            if (e.gestures && e.gestures.isGesture) {
+              setIsTracking(false);
+            } else if (e.properties && e.properties.isUserInteraction) {
+              setIsTracking(false);
+            }
+          }}
         >
+          {/* ✅ UPDATED: ONLY follow physical GPS if Driver AND On Duty. Otherwise, map points at the truck */}
           <MapboxGL.Camera 
             ref={mapCameraRef}
             animationDuration={1200}
-            followUserLocation={isTracking}
+            followUserLocation={isDriver && isTracking && isOnDuty}
             followZoomLevel={16}
             onUserTrackingModeChange={(event) => {
               if (!event.nativeEvent.payload.followUserLocation) {
@@ -776,17 +924,22 @@ const DriverRouteScreen = ({ navigation, route }) => {
             bounds={!isTracking && cameraBounds && !route.params?.targetLocation ? {
               ne: cameraBounds.ne, sw: cameraBounds.sw, paddingTop: 120, paddingBottom: 250, paddingLeft: 40, paddingRight: 40
             } : undefined}
-            centerCoordinate={!isTracking && !cameraBounds && !route.params?.targetLocation ? INITIAL_COORDINATES : undefined} 
+            centerCoordinate={
+              (isTracking && (!isDriver || !isOnDuty) && truckCoords)
+                ? truckCoords
+                : (!isTracking && !cameraBounds && !route.params?.targetLocation ? INITIAL_COORDINATES : undefined)
+            } 
           />
           
           <MapboxGL.UserLocation 
             visible={false} 
+            showsUserHeadingIndicator={false}
             onUpdate={(location) => {
                setUserLoc([location.coords.longitude, location.coords.latitude]);
             }} 
           />
 
-          {isDriver && bearingLine && (
+          {isDriver && bearingLine && isOnDuty && (
             <MapboxGL.ShapeSource id="routeLineSource-nav" shape={bearingLine}>
               <MapboxGL.LineLayer
                 id="routeLineLayer-nav"
@@ -797,7 +950,7 @@ const DriverRouteScreen = ({ navigation, route }) => {
 
           {truckCoords && (
             <MapboxGL.MarkerView id="shared-truck-mission" coordinate={truckCoords}>
-              <View style={[styles.customTruckPuck, !isTracking && { borderColor: '#94a3b8' }]}>
+              <View style={getTruckPuckStyle()}>
                 <Image 
                   source={require('../../assets/truck.png')} 
                   style={styles.truckIconImage}
@@ -883,12 +1036,23 @@ const DriverRouteScreen = ({ navigation, route }) => {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#E3F3DF' },
   scrollContent: { padding: 20, paddingBottom: 150 },
-  topHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 25, marginTop: -40 },
+  topHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, marginTop: -40 },
   dateText: { fontSize: 11, fontWeight: '700', color: '#10B981', textTransform: 'uppercase', letterSpacing: 1 },
   smallGreeting: { fontSize: 12, fontWeight: '600', color: '#64748b', marginTop: 2, textTransform: 'uppercase', letterSpacing: 0.5 },
   greetingText: { fontSize: 28, fontWeight: '900', color: '#1e293b', marginTop: -2 },
   avatar: { width: 52, height: 52, borderRadius: 16, justifyContent: 'center', alignItems: 'center', elevation: 4 },
   avatarText: { color: 'white', fontWeight: '800', fontSize: 20 },
+  
+  dutyContainer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#F6FBF6', padding: 15, borderRadius: 18, marginBottom: 20, elevation: 3 },
+  dutyTextCol: { flex: 1 },
+  dutyTitle: { fontSize: 14, fontWeight: '800', color: '#1e293b' },
+  dutySub: { fontSize: 11, fontWeight: '600', color: '#64748b', marginTop: 2 },
+  dutyToggleBtn: { flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 12, alignItems: 'center', borderWidth: 1.5 },
+  dutyBtnActive: { backgroundColor: '#FEF2F2', borderColor: '#FECACA' },
+  dutyBtnInactive: { backgroundColor: '#F0FDF4', borderColor: '#A7F3D0' },
+  dutyToggleText: { fontSize: 11, fontWeight: '900', color: '#10B981', letterSpacing: 0.5 },
+  dutyToggleTextActive: { color: '#EF4444' },
+
   dashCard: { backgroundColor: '#F6FBF6', borderRadius: 25, padding: 20, elevation: 8, marginBottom: 30 },
   vehicleInfoRow: { flexDirection: 'row', alignItems: 'flex-start' },
   truckIconCircle: { width: 45, height: 45, borderRadius: 12, backgroundColor: '#ECFDF5', justifyContent: 'center', alignItems: 'center' },
@@ -936,7 +1100,7 @@ const styles = StyleSheet.create({
   emptyBinsText: { marginTop: 12, color: '#94a3b8', fontWeight: '700', fontSize: 14 },
   stickyFooter: { position: 'absolute', bottom: 0, left: 0, right: 0, paddingHorizontal: 20, backgroundColor: '#E3F3DF' },
   engageBtn: { height: 65, borderRadius: 22, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', elevation: 8 },
-  engageBtnText: { color: 'white', fontSize: 17, fontWeight: '900', letterSpacing: 1 },
+  engageBtnText: { color: 'white', fontSize: 16, fontWeight: '900', letterSpacing: 1 },
   navContainer: { flex: 1, backgroundColor: '#0f172a' },
   fullMap: { flex: 1 },
   navHeaderOverlay: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10 },
@@ -1007,13 +1171,13 @@ const styles = StyleSheet.create({
     width: 35,
     height: 35,
     borderRadius: 20,
-    backgroundColor: 'rgba(239, 68, 68, 0.3)', // RED Pulse
+    backgroundColor: 'rgba(239, 68, 68, 0.3)', 
   },
   reportCore: {
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: '#DC2626', // RED Core
+    backgroundColor: '#DC2626', 
     borderWidth: 2,
     borderColor: 'white',
     alignItems: 'center',
@@ -1024,7 +1188,7 @@ const styles = StyleSheet.create({
   reportTip: {
     width: 10,
     height: 10,
-    backgroundColor: '#DC2626', // RED Tip
+    backgroundColor: '#DC2626', 
     borderBottomWidth: 2,
     borderRightWidth: 2,
     borderColor: 'white',
@@ -1076,6 +1240,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     elevation: 8,
+    zIndex: 100,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,

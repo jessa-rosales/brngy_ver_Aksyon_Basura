@@ -2,7 +2,7 @@ import React, {
   useState,
   useRef,
   useCallback,
-  useEffect // ✅ Added for navigation listeners
+  useEffect //  for navigation listeners
 } from 'react';
 import {
   View,
@@ -17,7 +17,7 @@ import {
   ActivityIndicator
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useFocusEffect, useNavigation } from '@react-navigation/native'; // ✅ Added useNavigation
+import { useFocusEffect, useNavigation } from '@react-navigation/native'; // for navigation useNavigation
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
@@ -42,10 +42,72 @@ import CustomAlert from '../components/CustomAlert';
 
 MapboxGL.setAccessToken('pk.eyJ1IjoiamVnby1ybyIsImEiOiJjbWx6dnZ6YmQwOW12NGtxd25vMmJldGZhIn0.uCCN-70t1ZZugt6h1ZoMOg');
 
+// --- 🔥 ROBUST PARSER FOR YOUR POSTGIS NESTED BOUNDARIES ---
+const parseBoundariesForMapbox = (raw) => {
+  if (!raw) return [];
+  try {
+    let data = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    if (data.coordinates) data = data.coordinates;
+    
+    // Flatten deep nesting
+    while (Array.isArray(data) && Array.isArray(data[0]) && Array.isArray(data[0][0])) {
+      data = data[0];
+    }
+    if (Array.isArray(data[0]) && typeof data[0][0] !== 'object' && data[0].length === 2) {
+      // Correct level
+    } else if (Array.isArray(data[0])) {
+      data = data[0];
+    }
+
+    let polygonCoords = data.map(point => {
+      let lat, lng;
+      if (point.lat !== undefined) {
+        lat = point.lat; lng = point.lng;
+      } else if (Array.isArray(point)) {
+        // Mapbox expects [Longitude, Latitude]
+        if (Number(point[0]) > 50) { 
+          lat = Number(point[1]); lng = Number(point[0]);
+        } else {
+          lat = Number(point[0]); lng = Number(point[1]);
+        }
+      }
+      return [Number(lng), Number(lat)];
+    }).filter(p => !isNaN(p[0]) && !isNaN(p[1]));
+
+    // GeoJSON strictly requires the polygon to be closed (first and last point must match)
+    if (polygonCoords.length > 0) {
+      const first = polygonCoords[0];
+      const last = polygonCoords[polygonCoords.length - 1];
+      if (first[0] !== last[0] || first[1] !== last[1]) {
+        polygonCoords.push([...first]);
+      }
+    }
+    return polygonCoords;
+  } catch (err) {
+    console.error("GeoJSON Parsing Error:", err);
+    return [];
+  }
+};
+
+const createGeoJSONFromZones = (zones) => {
+  const features = zones.map(z => {
+    const coords = parseBoundariesForMapbox(z.boundaries || z.coordinates);
+    if (coords.length < 3) return null; // Skip invalid geometry
+
+    return {
+      type: 'Feature',
+      properties: { id: z.zone_id, color: z.zone_color || '#1B5E20' },
+      geometry: { type: 'Polygon', coordinates: [coords] }
+    };
+  }).filter(Boolean); // Remove nulls
+
+  return { type: 'FeatureCollection', features };
+};
+
 const ReportScreen = () => {
   const insets = useSafeAreaInsets();
   const scrollRef = useRef(null);
-  const navigation = useNavigation(); // ✅ Added navigation reference
+  const navigation = useNavigation(); // navigation reference
 
   // --- FORM STATE ---
   const [selectedIssue, setSelectedIssue] = useState(null);
@@ -57,7 +119,7 @@ const ReportScreen = () => {
   // Loading State for Submission
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // ✅ NEW: Reference to allow navigation without warning when submission succeeds
+  // Reference to allow navigation without warning when submission succeeds
   const isSuccessNavigating = useRef(false);
 
   // --- MAP STATE ---
@@ -65,6 +127,11 @@ const ReportScreen = () => {
   const [location, setLocation] = useState(null);
   const [address, setAddress] = useState('');
   const [mapType, setMapType] = useState('standard');
+
+  // --- MAP DATA STATES ---
+  const [zonesData, setZonesData] = useState({ type: 'FeatureCollection', features: [] });
+  const [bins, setBins] = useState([]);
+  const [existingReports, setExistingReports] = useState([]);
 
   // Custom Alert State
   const [customAlert, setCustomAlert] = useState({
@@ -75,7 +142,7 @@ const ReportScreen = () => {
     confirmText: 'OK',
     cancelText: 'Close',
     onConfirm: null,
-    onCancel: null // Added to handle custom cancel actions
+    onCancel: null // handle custom cancel actions
   });
 
   const closeAlert = () => setCustomAlert(prev => ({ ...prev, visible: false }));
@@ -99,10 +166,10 @@ const ReportScreen = () => {
     setAddress('');
   };
 
-  // ✅ NEW: Check if there is any unsaved data
+  // Check if there is any unsaved data
   const hasUnsavedChanges = selectedIssue !== null || otherIssueType.trim() !== '' || description.trim() !== '' || image !== null || location !== null;
 
-  // ✅ NEW: Navigation Interceptor (Unsaved Changes Warning)
+  //  Navigation Interceptor (Unsaved Changes Warning)
   useEffect(() => {
     // 1. Intercept Back Buttons or Stack Navigation
     const handleBeforeRemove = (e) => {
@@ -141,6 +208,59 @@ const ReportScreen = () => {
       isSuccessNavigating.current = false;
     }, [])
   );
+
+  // --- 🔥 FIXED: FETCH MAP DATA FROM MULTIPLE ENDPOINTS ---
+  useEffect(() => {
+    if (showMap) {
+      const fetchMapData = async () => {
+        try {
+          // 1. Fetch Zones and Bins
+          const zoneResponse = await mobileService.getZoneTrackingData();
+          
+          if (zoneResponse && zoneResponse.success && zoneResponse.data) {
+            const fetchedZones = zoneResponse.data;
+            setZonesData(createGeoJSONFromZones(fetchedZones));
+
+            let rawBins = [];
+            fetchedZones.forEach(zone => {
+              if (zone.bins && Array.isArray(zone.bins)) {
+                rawBins = [...rawBins, ...zone.bins];
+              }
+            });
+
+            // Keep only unique bins to prevent duplicate key errors
+            const uniqueBins = Array.from(new Map(rawBins.map(b => [b.id, b])).values());
+            setBins(uniqueBins);
+          }
+
+          // 2. Fetch ALL Reports 
+          // (Since getZoneTrackingData omits pending reports that aren't assigned to a truck yet)
+          let reportsResponse = await mobileService.getUserReportHistory().catch(() => null);
+          
+          // Fallback if getUserReportHistory isn't responding
+          if (!reportsResponse || !reportsResponse.success) {
+             reportsResponse = await mobileService.getAllReports().catch(() => null);
+          }
+
+          if (reportsResponse && reportsResponse.success && reportsResponse.reports) {
+            // Filter pending and standardize the object keys so Mapbox can read them
+            const pendingReports = reportsResponse.reports
+              .filter(r => r.status === 'Pending')
+              .map(r => ({
+                id: r.report_id,
+                lat: r.latitude,
+                lng: r.longitude
+              }));
+              
+            setExistingReports(pendingReports);
+          }
+        } catch (error) {
+          console.error("Map Context Error:", error);
+        }
+      };
+      fetchMapData();
+    }
+  }, [showMap]);
 
   // --- HANDLERS ---
   const pickImage = async () => {
@@ -190,6 +310,17 @@ const ReportScreen = () => {
       }
     } catch (error) {
       console.error("Reverse Geocoding Error:", error);
+    }
+  };
+
+  // --- HANDLE CLICKING A BIN ---
+  const handleBinSelect = (bin) => {
+    setLocation({ latitude: Number(bin.lat), longitude: Number(bin.lng) });
+    setAddress(`Bin: ${bin.address || 'Selected Point'}`);
+    
+    // Auto-suggest 'overflow' if no issue selected yet
+    if (!selectedIssue) {
+        setSelectedIssue('overflow');
     }
   };
 
@@ -277,7 +408,7 @@ const ReportScreen = () => {
       const result = await mobileService.submitCitizenReport(formData);
 
       if (result.success) {
-        // ✅ UPDATED: Auto-Navigate to FeedScreen on Success
+        // Auto-Navigate to FeedScreen on Success
         const handleSuccessNavigation = () => {
           closeAlert();
           isSuccessNavigating.current = true; // Tell the beforeRemove listener to ignore this navigation
@@ -500,6 +631,43 @@ const ReportScreen = () => {
               animationDuration={1000}
             />
 
+            {/* --- RENDER ZONES (POLYGONS) --- */}
+            {zonesData.features.length > 0 && (
+              <MapboxGL.ShapeSource id="zonesSource" shape={zonesData}>
+                <MapboxGL.FillLayer id="zonesFill" style={{ fillColor: ['get', 'color'], fillOpacity: 0.15 }} />
+                <MapboxGL.LineLayer id="zonesLine" style={{ lineColor: ['get', 'color'], lineWidth: 2, lineOpacity: 0.6 }} />
+              </MapboxGL.ShapeSource>
+            )}
+
+            {/* --- RENDER EXISTING REPORTS (RED DOTS) --- */}
+            {existingReports.map(report => (
+               <MapboxGL.PointAnnotation 
+                 key={`rep-${report.id}`} 
+                 id={`rep-${report.id}`} 
+                 coordinate={[Number(report.lng), Number(report.lat)]}
+               >
+                  <View style={styles.reportMarker}>
+                     <AlertTriangle size={12} color="#fff" />
+                  </View>
+               </MapboxGL.PointAnnotation>
+            ))}
+
+            {/* --- RENDER BINS (CLICKABLE GREEN ICONS) --- */}
+            {bins.map((bin) => (
+              <MapboxGL.PointAnnotation
+                key={`bin-${bin.id}`}
+                id={`bin-${bin.id}`}
+                coordinate={[Number(bin.lng), Number(bin.lat)]}
+                onSelected={() => handleBinSelect(bin)} 
+              >
+                <View style={styles.binMarkerContainer}>
+                  <View style={styles.binMarkerBg}>
+                    <Trash2 size={14} color="#1B5E20" />
+                  </View>
+                </View>
+              </MapboxGL.PointAnnotation>
+            ))}
+
             {location && (
               <MapboxGL.PointAnnotation
                 id="pinned-location"
@@ -526,6 +694,13 @@ const ReportScreen = () => {
                   {mapType === 'hybrid' ? 'SATELLITE' : 'STANDARD'}
                 </Text>
              </TouchableOpacity>
+          </View>
+
+          {/* QUICK LEGEND */}
+          <View style={styles.legendContainer}>
+             <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: '#1B5E20' }]} /><Text style={styles.legendText}>Waste Bins</Text></View>
+             <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: '#EF4444' }]} /><Text style={styles.legendText}>Reports</Text></View>
+             <Text style={styles.legendHint}>Tap a bin to report it</Text>
           </View>
 
           <View style={[styles.mapFooter, { paddingBottom: insets.bottom + 20 }]}>
@@ -790,6 +965,76 @@ const styles = StyleSheet.create({
     color: '#fff', 
     fontSize: 16, 
     fontWeight: '900' 
+  },
+  // 🔥 MAP MARKER STYLES
+  reportMarker: { 
+    backgroundColor: '#EF4444', 
+    width: 22, 
+    height: 22, 
+    borderRadius: 11, 
+    alignItems: 'center', 
+    justifyContent: 'center', 
+    borderWidth: 2, 
+    borderColor: '#fff', 
+    shadowColor: '#000', 
+    shadowOpacity: 0.3, 
+    shadowRadius: 3, 
+    elevation: 5 
+  },
+  binMarkerContainer: { 
+    alignItems: 'center', 
+    justifyContent: 'center' 
+  },
+  binMarkerBg: { 
+    backgroundColor: '#fff', 
+    width: 28, 
+    height: 28, 
+    borderRadius: 14, 
+    alignItems: 'center', 
+    justifyContent: 'center', 
+    borderWidth: 2, 
+    borderColor: '#1B5E20', 
+    shadowColor: '#000', 
+    shadowOpacity: 0.3, 
+    shadowRadius: 4, 
+    elevation: 6 
+  },
+  legendContainer: { 
+    position: 'absolute', 
+    bottom: 120, 
+    right: 20, 
+    backgroundColor: 'rgba(255,255,255,0.95)', 
+    padding: 12, 
+    borderRadius: 12, 
+    elevation: 4, 
+    shadowColor: '#000', 
+    shadowOpacity: 0.1, 
+    shadowRadius: 5 
+  },
+  legendItem: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    marginBottom: 4 
+  },
+  legendDot: { 
+    width: 10, 
+    height: 10, 
+    borderRadius: 5, 
+    marginRight: 8 
+  },
+  legendText: { 
+    fontSize: 11, 
+    fontWeight: 'bold', 
+    color: '#334155' 
+  },
+  legendHint: { 
+    fontSize: 9, 
+    color: '#64748b', 
+    fontStyle: 'italic', 
+    marginTop: 4, 
+    borderTopWidth: 1, 
+    borderTopColor: '#e2e8f0', 
+    paddingTop: 4 
   }
 });
 

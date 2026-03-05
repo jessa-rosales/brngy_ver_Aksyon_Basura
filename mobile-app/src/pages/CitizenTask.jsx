@@ -31,6 +31,7 @@ import {
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { mobileService } from '../services/mobileService';
+import { driverService } from '../services/driverService'; // ✅ Added to get user's assigned tasks
 
 const CitizenTask = ({ navigation, route }) => {
   const insets = useSafeAreaInsets();
@@ -44,15 +45,32 @@ const CitizenTask = ({ navigation, route }) => {
 
   const fetchTasks = async () => {
     try {
-      const userData = await AsyncStorage.getItem('userProfile');
-      if (userData) {
-        setCurrentUser(JSON.parse(userData));
+      const userDataStr = await AsyncStorage.getItem('userProfile');
+      if (!userDataStr) {
+        setLoading(false);
+        setRefreshing(false);
+        return;
       }
+      
+      const user = JSON.parse(userDataStr);
+      setCurrentUser(user);
 
+      // ✅ 1. Get the current user's active assignments to find out what team/tasks they belong to
+      const assignments = await driverService.getAssignedRoute(user.user_id || user.id);
+      const myTaskIds = (assignments || []).map(a => String(a.task_id));
+
+      // ✅ 2. Fetch all reports
       const result = await mobileService.getAllReports();
+      
       if (result.success) {
-        // Only show reports that are not 'Pending'
-        const assignedTasks = result.reports.filter(r => r.status !== 'Pending');
+        // ✅ 3. Filter reports so it ONLY shows tasks assigned to this user's team AND are not pending
+        const assignedTasks = result.reports.filter(r => {
+          const isAssignedToMyTeam = r.assigned_team_id && myTaskIds.includes(String(r.assigned_team_id));
+          const isNotPending = r.status !== 'Pending';
+          
+          return isAssignedToMyTeam && isNotPending;
+        });
+        
         setTasks(assignedTasks);
       }
     } catch (error) {
@@ -173,7 +191,6 @@ const CitizenTask = ({ navigation, route }) => {
         </View>
 
         <View style={styles.cardActionsRow}>
-          {/* ✅ UPDATED: If Resolved, show non-clickable badge. If In Progress, show nothing here. */}
           {isResolved ? (
             <View style={[styles.resolveBtn, styles.resolveBtnActive]}>
               <CheckCircle2 size={18} color="#FFFFFF" />

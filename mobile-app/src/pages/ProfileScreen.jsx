@@ -9,6 +9,7 @@ import {
   Alert,
   ActivityIndicator,
   Image as RNImage,
+  Modal,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
@@ -26,7 +27,7 @@ import {
   History,
   Info,
   Calendar,
-  Archive // ✅ ADDED Archive Icon
+  Archive 
 } from 'lucide-react-native';
 
 import { mobileService } from '../services/mobileService';
@@ -39,8 +40,8 @@ const ProfileScreen = ({ navigation }) => {
   // --- STATE MANAGEMENT ---
   const [userData, setUserData] = useState(null);
   const [loading, setLoading] = useState(true);
-  
   const [logoutModalVisible, setLogoutModalVisible] = useState(false);
+  const [infoModalVisible, setInfoModalVisible] = useState(false);
 
   // --- DATA LOADING LOGIC ---
   const loadUserProfile = async () => {
@@ -76,18 +77,13 @@ const ProfileScreen = ({ navigation }) => {
       loadUserProfile();
       
       if (scrollRef.current) {
-        scrollRef.current.scrollTo({ 
-          y: 0, 
-          animated: false 
-        });
+        scrollRef.current.scrollTo({ y: 0, animated: false });
       }
     }, [])
   );
 
   // --- LOGOUT LOGIC ---
-  const handleLogoutPress = () => {
-    setLogoutModalVisible(true);
-  };
+  const handleLogoutPress = () => setLogoutModalVisible(true);
 
   const executeLogout = async () => {
     setLogoutModalVisible(false);
@@ -121,7 +117,6 @@ const ProfileScreen = ({ navigation }) => {
     </TouchableOpacity>
   );
 
-  // --- LOADING RENDER ---
   if (loading) {
     return (
       <View style={[styles.container, styles.center]}>
@@ -130,7 +125,8 @@ const ProfileScreen = ({ navigation }) => {
     );
   }
 
-  // --- MAIN RENDER ---
+  const isCitizen = userData?.role === 'Verified Citizen';
+
   return (
     <View style={styles.container}>
       <ScrollView
@@ -146,16 +142,16 @@ const ProfileScreen = ({ navigation }) => {
           ]}
         >
           <View style={styles.avatarGlow}>
-              <View style={styles.avatarMain}>
-                {userData?.profilePic ? (
-                  <RNImage 
+            <View style={styles.avatarMain}>
+              {userData?.profilePic ? (
+                <RNImage 
                   source={{ uri: userData.profilePic }} 
                   style={{ width: 74, height: 74, borderRadius: 37 }} 
                 />
-                ) : (
-                  <User size={38} color="#1B5E20" strokeWidth={2} />
-                )}
-              </View>
+              ) : (
+                <User size={38} color="#1B5E20" strokeWidth={2} />
+              )}
+            </View>
             <View style={styles.verifiedBadge}>
               <ShieldCheck size={12} color="#fff" />
             </View>
@@ -166,7 +162,6 @@ const ProfileScreen = ({ navigation }) => {
         </LinearGradient>
 
         <View style={styles.body}>
-          {/* PERSONAL INFO CARD */}
           <Text style={styles.sectionTitle}>Personal Details</Text>
           <View style={styles.card}>
             <ActionRow icon={Mail} label="Email" subLabel={userData?.email} />
@@ -174,25 +169,22 @@ const ProfileScreen = ({ navigation }) => {
             <ActionRow icon={MapPin} label="Location" subLabel={userData?.address} isLast />
           </View>
 
-          {/* HISTORY & SETTINGS CARD */}
           <Text style={styles.sectionTitle}>Account & Activity</Text>
           <View style={styles.card}>
             <ActionRow 
               icon={History} 
-              label="My Report History" 
-              subLabel="Track your reported issues"
-              onPress={() => navigation.navigate('UserReports')}
+              label={isCitizen ? "My Report History" : "My Collection History"} 
+              subLabel={isCitizen ? "Track your reported issues" : "View your past collections and tasks"}
+              onPress={() => navigation.navigate(isCitizen ? 'UserReports' : 'CollectionHistory')} 
             />
 
-            {(userData?.role === 'Verified Driver' || userData?.role === 'Verified Collector') && (
-                <ActionRow 
-                    icon={Calendar} 
-                    label="My Schedule" 
-                    subLabel="View your assigned shifts"
-                    onPress={() => {
-                        navigation.navigate('Schedule'); 
-                    }} 
-                />
+            {!isCitizen && (
+              <ActionRow 
+                icon={Calendar} 
+                label="My Schedule" 
+                subLabel="View your assigned shifts"
+                onPress={() => navigation.navigate('Schedule')} 
+              />
             )}
             
             <ActionRow 
@@ -201,18 +193,21 @@ const ProfileScreen = ({ navigation }) => {
               onPress={() => navigation.navigate('EditProfile')} 
             />
 
-            {/* ✅ NEW: Archive Center Button */}
             <ActionRow 
               icon={Archive} 
-              label="Archive Center" 
-              subLabel="View previously archived reports"
-              onPress={() => navigation.navigate('ArchiveCenter')} 
+              label={isCitizen ? "Archive Center" : "Archive History"} 
+              subLabel={isCitizen ? "View previously archived reports" : "View archived collection logs"}
+              onPress={() => navigation.navigate(isCitizen ? 'ArchiveCenter' : 'ArchiveHistory')} 
             />
 
-             <ActionRow icon={Info} label="App Information" onPress={() => {}} isLast />
+             <ActionRow 
+               icon={Info} 
+               label="App Information" 
+               onPress={() => setInfoModalVisible(true)} 
+               isLast 
+             />
           </View>
 
-          {/* LOGOUT BUTTON */}
           <TouchableOpacity style={styles.logoutBtn} onPress={handleLogoutPress}>
             <LogOut size={20} color="#EF4444" />
             <Text style={styles.logoutText}>Sign Out</Text>
@@ -222,7 +217,62 @@ const ProfileScreen = ({ navigation }) => {
         </View>
       </ScrollView>
 
-      {/* CUSTOM ALERT OVERLAY */}
+      {/* --- APP INFORMATION MODAL --- */}
+      <Modal
+        visible={infoModalVisible}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setInfoModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.infoContent}>
+            <View style={styles.infoHeader}>
+              <View style={styles.logoCircle}>
+                <RNImage 
+                  source={require('../../assets/logo6.png')} 
+                  style={{ width: 80, height: 80 }} 
+                  resizeMode="contain"
+                />
+              </View>
+              <Text style={styles.infoTitle}>Aksyon Basura</Text>
+              <Text style={styles.infoVersion}>Version 1.0.0 (Stable)</Text>
+            </View>
+
+            <ScrollView style={styles.infoScroll}>
+              <Text style={styles.infoSubtitle}>Our Mission</Text>
+              <Text style={styles.infoBody}>
+                Aksyon Basura is an integrated waste management system designed to streamline garbage collection and empower citizens.
+                Our mission is to foster a cleaner, greener community through technology-driven solutions and active participation.
+              </Text>
+
+              <View style={styles.devSection}>
+                <Text style={styles.devTitle}>How It Works</Text>
+                <Text style={styles.devItem}>• Citizens report waste issues with photo evidence.</Text>
+                <Text style={styles.devItem}>• Teams (Drivers/Collectors) manage tasks in real-time.</Text>
+                <Text style={styles.devItem}>• Collections are verified with high-fidelity photo proof.</Text>
+                <Text style={styles.devItem}>• Live vehicle tracking optimizes daily collection routes.</Text>
+              </View>
+
+              <View style={styles.devSection}>
+                <Text style={styles.devTitle}>Privacy & Security</Text>
+                <Text style={styles.infoBodySmall}>
+                  Your privacy is our priority. Location data is used strictly for waste tracking and navigation. 
+                  All personal records are encrypted and stored in our secure database.
+                </Text>
+              </View>
+            </ScrollView>
+
+            <TouchableOpacity 
+              style={styles.closeInfoBtn} 
+              onPress={() => setInfoModalVisible(false)}
+            >
+              <Text style={styles.closeInfoText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* --- LOGOUT ALERT --- */}
       <CustomAlert 
         visible={logoutModalVisible}
         title="Sign Out"
@@ -240,9 +290,9 @@ const ProfileScreen = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#E3F3DF' },
   center: { justifyContent: 'center', alignItems: 'center' },
-  topSection: { paddingBottom: 20, alignItems: 'center', borderBottomLeftRadius: 30, borderBottomRightRadius: 30, elevation: 8 },
+  topSection: { paddingBottom: 25, alignItems: 'center', borderBottomLeftRadius: 30, borderBottomRightRadius: 30, elevation: 8 },
   avatarGlow: { position: 'relative', marginBottom: 10, padding: 3, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 50 },
-  avatarMain: { width: 74, height: 74, borderRadius: 37, backgroundColor: '#fff', justifyContent: 'center', alignItems: 'center' },
+  avatarMain: { width: 74, height: 74, borderRadius: 37, backgroundColor: '#fff', justifyContent: 'center', alignItems: 'center', overflow: 'hidden' },
   verifiedBadge: { position: 'absolute', bottom: 0, right: 0, backgroundColor: '#3b82f6', borderRadius: 10, padding: 4, borderWidth: 2, borderColor: '#1B5E20' },
   headerName: { fontSize: 20, fontWeight: '900', color: '#fff' },
   headerRole: { fontSize: 11, color: '#E3F3DF', fontWeight: '700', marginTop: 2, textTransform: 'uppercase', letterSpacing: 1 },
@@ -257,7 +307,23 @@ const styles = StyleSheet.create({
   actionSubLabel: { fontSize: 11, color: '#64748b', marginTop: 1, fontWeight: '500' },
   logoutBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff', marginTop: 25, paddingVertical: 14, borderRadius: 18, gap: 10, borderWidth: 1, borderColor: '#FEE2E2' },
   logoutText: { fontSize: 14, fontWeight: '800', color: '#EF4444' },
-  versionLabel: { textAlign: 'center', color: '#1B5E20', fontSize: 10, marginTop: 25, fontWeight: '700', opacity: 0.4 },
+  versionLabel: { textAlign: 'center', color: '#1B5E20', fontSize: 10, marginTop: 25, fontWeight: '700', opacity: 0.4, paddingBottom: 20 },
+  
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+  infoContent: { backgroundColor: '#fff', borderRadius: 25, width: '100%', maxHeight: '75%', padding: 25, alignItems: 'center' },
+  infoHeader: { alignItems: 'center', marginBottom: 20 },
+  logoCircle: { width: 80, height: 80, borderRadius: 40, backgroundColor: '#E3F3DF', justifyContent: 'center', alignItems: 'center', marginBottom: 10 },
+  infoTitle: { fontSize: 22, fontWeight: '900', color: '#1B5E20' },
+  infoVersion: { fontSize: 12, color: '#64748b', fontWeight: '600' },
+  infoScroll: { width: '100%' },
+  infoSubtitle: { fontSize: 16, fontWeight: '800', color: '#1B5E20', marginBottom: 10 },
+  infoBody: { fontSize: 14, color: '#475569', lineHeight: 22, textAlign: 'justify' },
+  infoBodySmall: { fontSize: 12, color: '#64748b', lineHeight: 18, textAlign: 'justify' },
+  devSection: { marginTop: 20, paddingTop: 20, borderTopWidth: 1, borderTopColor: '#F1F5F9' },
+  devTitle: { fontSize: 14, fontWeight: '800', color: '#1B5E20', marginBottom: 10 },
+  devItem: { fontSize: 13, color: '#64748b', marginBottom: 5, fontWeight: '500' },
+  closeInfoBtn: { marginTop: 25, backgroundColor: '#1B5E20', paddingVertical: 12, paddingHorizontal: 40, borderRadius: 15 },
+  closeInfoText: { color: '#fff', fontWeight: '800', fontSize: 14 },
 });
 
 export default ProfileScreen;

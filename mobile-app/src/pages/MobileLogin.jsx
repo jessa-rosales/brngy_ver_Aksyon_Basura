@@ -261,12 +261,12 @@ const MobileLogin = ({ navigation }) => {
           <View style={styles.headerSection}>
             <View style={styles.logoWrapper}>
               <Image 
-                source={require('../../assets/Logo.png')} 
+                source={require('../../assets/logo6.png')} 
                 style={styles.logoImage} 
                 resizeMode="contain" 
               />
             </View>
-            <Text style={styles.brandTitle}>AksyonBasura</Text>
+            {/* ✅ AksyonBasura Word Removed per request */}
             <Text style={styles.brandTagline}>
               Integrated Waste Management &{"\n"}
               Mobile Collection Monitoring System
@@ -514,7 +514,7 @@ const MobileLogin = ({ navigation }) => {
             <ScrollView showsVerticalScrollIndicator={false} style={styles.modalBody}>
               <Text style={styles.policyHeading}>1. Collection Service</Text>
               <Text style={styles.policyText}>
-                AksyonBasura provides waste collection monitoring. Users must 
+                The platform provides waste collection monitoring. Users must 
                 ensure waste is segregated according to LGU guidelines 
                 before the collection vehicle arrives.
               </Text>
@@ -547,7 +547,7 @@ const MobileLogin = ({ navigation }) => {
         </View>
       </Modal>
 
-      {/* ✅ NEW: CUSTOM ALERT RENDER */}
+      {/* ✅ CUSTOM ALERT RENDER */}
       <CustomAlert 
         visible={customAlert.visible}
         title={customAlert.title}
@@ -577,8 +577,8 @@ const styles = StyleSheet.create({
     marginBottom: 30 
   },
   logoWrapper: { 
-    width: 120, 
-    height: 120, 
+    width: 166, 
+    height: 163, 
     backgroundColor: '#fff', 
     borderRadius: 28, 
     justifyContent: 'center', 
@@ -590,21 +590,15 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 } 
   },
   logoImage: { 
-    width: 100, 
-    height: 100 
-  },
-  brandTitle: { 
-    fontSize: 28, 
-    fontWeight: '900', 
-    color: '#0f172a', 
-    letterSpacing: -1 
+    width: 175, 
+    height: 175 
   },
   brandTagline: { 
     fontSize: 10, 
     fontWeight: '700', 
     color: '#64748b', 
     textAlign: 'center', 
-    marginTop: 8, 
+    marginTop: -5, 
     lineHeight: 15, 
     textTransform: 'uppercase' 
   },
