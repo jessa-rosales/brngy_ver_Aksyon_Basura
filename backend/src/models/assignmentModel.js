@@ -54,15 +54,6 @@ const assignmentModel = {
     }
 
     // --- 1. RESOURCE USAGE CONFLICTS (Driver, Vehicle usage, Zone) ---
-    /*let query = `
-      SELECT a.*, u.first_name, u.last_name, z.zone_name,
-             TO_CHAR(a.start_time, 'HH24:MI') as s_time, 
-             TO_CHAR(a.end_time, 'HH24:MI') as e_time 
-      FROM public.task_assignments a 
-      LEFT JOIN public.users u ON a.driver_id = u.user_id
-      LEFT JOIN public.zones z ON a.zone_id = z.zone_id
-      WHERE a.status = 'Active'
-    `;Update FEB 28*/
     let query = `
       SELECT a.*, u.first_name, u.last_name, z.zone_name,
              TO_CHAR(a.start_time, 'HH24:MI') as s_time, 
@@ -70,7 +61,9 @@ const assignmentModel = {
       FROM public.task_assignments a 
       LEFT JOIN public.users u ON a.driver_id = u.user_id
       LEFT JOIN public.zones z ON a.zone_id = z.zone_id
-      WHERE a.status = 'Active' AND a.is_archived = false
+      WHERE a.status = 'Active' 
+        AND a.is_archived = false 
+        AND (z.is_archived = false OR z.zone_id IS NULL) -- ✅ IGNORE ARCHIVED ZONES
     `;
     if (excludeId) query += ` AND a.task_id != ${excludeId}`;
     
@@ -99,24 +92,16 @@ const assignmentModel = {
     }
 
     // --- 2. COLLECTOR CONFLICT CHECK ---
-    /*if (collector_ids?.length > 0) {
+    if (collector_ids?.length > 0) {
       let colQuery = `
         SELECT tc.collector_id, u.first_name, u.last_name, a.work_days, a.start_date, a.end_date,
                TO_CHAR(a.start_time, 'HH24:MI') as s_time, TO_CHAR(a.end_time, 'HH24:MI') as e_time
         FROM public.task_collectors tc
         JOIN public.task_assignments a ON tc.task_id = a.task_id
         JOIN public.users u ON tc.collector_id = u.user_id
-        WHERE tc.collector_id = ANY($1) AND a.status = 'Active'
-      `; Updated FEB 28*/
-
-      if (collector_ids?.length > 0) {
-      let colQuery = `
-        SELECT tc.collector_id, u.first_name, u.last_name, a.work_days, a.start_date, a.end_date,
-               TO_CHAR(a.start_time, 'HH24:MI') as s_time, TO_CHAR(a.end_time, 'HH24:MI') as e_time
-        FROM public.task_collectors tc
-        JOIN public.task_assignments a ON tc.task_id = a.task_id
-        JOIN public.users u ON tc.collector_id = u.user_id
-        WHERE tc.collector_id = ANY($1) AND a.status = 'Active' AND a.is_archived = false
+        WHERE tc.collector_id = ANY($1) 
+          AND a.status = 'Active' 
+          AND a.is_archived = false
       `;
       if (excludeId) colQuery += ` AND a.task_id != ${excludeId}`;
       
@@ -207,30 +192,7 @@ const assignmentModel = {
   },
 
   getAll: async () => {
-  /*const query = `
-    SELECT 
-        a.task_id, a.driver_id, a.vehicle_id, a.zone_id,
-        u.first_name, u.last_name,
-        v.vehicle_name,
-        v.plate_number,
-        v.status AS truck_status, -- ✅ Gi-rename nato para dili mo-conflict
-        a.status AS assignment_status, 
-        z.zone_name,
-        a.work_days, a.start_date, a.end_date,
-        TO_CHAR(a.start_time, 'HH24:MI') as start_time, 
-        TO_CHAR(a.end_time, 'HH24:MI') as end_time,
-        (SELECT ARRAY_AGG(tc.collector_id) FROM public.task_collectors tc WHERE tc.task_id = a.task_id) as collector_ids,
-        (SELECT ARRAY_AGG(usr.first_name || ' ' || usr.last_name) 
-         FROM public.task_collectors tc 
-         JOIN public.users usr ON tc.collector_id = usr.user_id 
-         WHERE tc.task_id = a.task_id) as collector_names
-    FROM public.task_assignments a
-    LEFT JOIN public.users u ON a.driver_id = u.user_id
-    LEFT JOIN public.vehicles v ON a.vehicle_id = v.vehicle_id
-    LEFT JOIN public.zones z ON a.zone_id = z.zone_id
-    ORDER BY a.task_id DESC;
-  `;*/
-  const query = `
+    const query = `
       SELECT 
           a.task_id, a.driver_id, a.vehicle_id, a.zone_id,
           u.first_name, u.last_name,
@@ -253,10 +215,11 @@ const assignmentModel = {
       LEFT JOIN public.vehicles v ON a.vehicle_id = v.vehicle_id
       LEFT JOIN public.zones z ON a.zone_id = z.zone_id
       WHERE a.is_archived = false
+        AND (z.is_archived = false OR z.zone_id IS NULL) -- ✅ STRICT FIX: Hides active schedules if their zone was archived
       ORDER BY a.task_id DESC;
     `;
-  const res = await pool.query(query);
-  return res.rows;
+    const res = await pool.query(query);
+    return res.rows;
   },
 
   archive: async (id) => {
