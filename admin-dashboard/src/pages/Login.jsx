@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { authService } from '../services/authService';
 import { useUser } from '../context/UserContext'; 
 import { ShieldAlert, AlertCircle, Eye, EyeOff } from 'lucide-react'; 
-import { motion, AnimatePresence } from 'framer-motion'; // Added for smooth error animation
+import { motion, AnimatePresence } from 'framer-motion'; // for smooth error animation
 
 const Login = () => {
   const [email, setEmail] = useState('');
@@ -28,7 +28,7 @@ const Login = () => {
         console.error("Response is not JSON");
       }
 
-      // 1. HANDLE HTTP ERRORS (401 Unauthorized, 403 Forbidden)
+      // HANDLE HTTP ERRORS (401 Unauthorized, 403 Forbidden)
       if (!response.ok) {
         if (response.status === 401) {
           setError({ msg: "Invalid email or password. Please try again.", type: 'auth' });
@@ -45,7 +45,7 @@ const Login = () => {
         return;
       }
 
-      // 2. VERIFY USER PROPERTIES IF LOGIN IS TECHNICALLY SUCCESSFUL
+      //  VERIFY USER PROPERTIES IF LOGIN IS TECHNICALLY SUCCESSFUL
       if (data.user) {
         // Check for Inactive Account
         if (data.user.status === 'Inactive') {
@@ -66,7 +66,7 @@ const Login = () => {
         }
       }
 
-      // 3. SUCCESS - ALL CHECKS PASSED
+      // SUCCESS - ALL CHECKS PASSED
       setUser(data.user); 
       localStorage.setItem("token", data.token);
       localStorage.setItem("userProfile", JSON.stringify(data.user));

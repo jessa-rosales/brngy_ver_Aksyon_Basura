@@ -227,7 +227,7 @@ const LandingPage = () => {
           <div className="relative z-20 w-full px-6 md:px-12 md:pl-[100px] max-w-7xl mx-auto">
             <motion.div initial={{ opacity: 0, x: -50 }} animate={!isLoading ? { opacity: 1, x: 0 } : {}} transition={{ duration: 1, delay: 0.5 }}>
               <h1 className="text-[44px] md:text-[80px] font-black leading-[0.95] mb-8 uppercase tracking-tighter text-white">Transform Your  <br />Barangay<span className="bg-gradient-to-r from-emerald-400 to-emerald-600 bg-clip-text text-transparent"> Waste Management</span> <br />Into Intelligence</h1>
-              <p className="text-base md:text-xl text-gray-300 font-medium mb-12 max-w-2xl">Empowering Cagayan de Oro with real-time tracking, AI-driven reporting, and hyper-efficient resource allocation.</p>
+              <p className="text-base md:text-xl text-gray-300 font-medium mb-12 max-w-2xl">Empowering Barangay Nazareth with real-time tracking, and citizen engagement tools to build cleaner, smarter, and more sustainable communities.</p>
               <div className="flex flex-col sm:flex-row items-center gap-5">
                 <button className="w-full sm:w-auto px-12 py-5 bg-emerald-600 text-white font-black rounded-2xl flex items-center justify-center gap-3 hover:bg-emerald-500 transition-all text-sm uppercase shadow-2xl active:scale-95">Go to App Now! <ArrowRight size={20} /></button>
                 <button className="w-full sm:w-auto px-10 py-5 border-2 border-white/20 text-white font-black rounded-2xl flex items-center justify-center gap-3 hover:bg-white/10 transition-all text-sm uppercase active:scale-95"><PlayCircle size={22} className="text-emerald-500" /> How it works</button>

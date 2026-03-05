@@ -1,6 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Bell, Map as MapIcon, Inbox, X, ArrowUp, Trash2, ChevronDown, AlertCircle, Clock, ChevronRight, Image as ImageIcon } from 'lucide-react';
+import { 
+  Search, Bell, Map as MapIcon, Inbox, X, ArrowUp, Trash2, 
+  ChevronDown, AlertCircle, Clock, ChevronRight, Image as ImageIcon,
+  Flame, AlertOctagon, MapPin, BarChart3, TrendingUp
+} from 'lucide-react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { MapContainer, TileLayer, LayersControl, Polygon, Marker, Popup, useMap } from 'react-leaflet';
@@ -12,7 +16,20 @@ import { zoneService } from '../services/zoneService';
 import { reportService } from '../services/reportService'; 
 import { useUser } from '../context/UserContext';
 
-// ✅ ROBUST HELPER: Ensures reports show up geographically inside zones
+// Helper: Calculate distance in meters between two coordinates (Haversine formula)
+const getDistanceInMeters = (lat1, lon1, lat2, lon2) => {
+  const R = 6371e3; // Earth radius in meters
+  const rad = Math.PI / 180;
+  const dLat = (lat2 - lat1) * rad;
+  const dLon = (lon2 - lon1) * rad;
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1 * rad) * Math.cos(lat2 * rad) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+};
+
+// Reports show up geographically inside zones
 const isPointInPolygon = (lat, lng, polygon) => {
   if (!polygon || !Array.isArray(polygon)) return false;
   const x = Number(lat);
@@ -86,13 +103,10 @@ const dashboardBinIcon = new L.DivIcon({
 const reportIcon = new L.DivIcon({
   html: renderToStaticMarkup(
     <div className="relative flex items-center justify-center">
-      {/* Outer Pulse Effect */}
       <div className="absolute w-10 h-10 bg-rose-500/40 rounded-full animate-ping" />
-      {/* Main Pin Container */}
       <div className="relative bg-rose-600 p-1.5 rounded-full border-2 border-white shadow-lg flex items-center justify-center">
         <AlertCircle color="white" size={12} fill="white" fillOpacity={0.2} />
       </div>
-      {/* Bottom Pointer Tip */}
       <div className="absolute -bottom-1 w-2 h-2 bg-rose-600 rotate-45 border-r border-b border-white" />
     </div>
   ),
@@ -114,6 +128,10 @@ const Dashboard = () => {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   
   const [showBackToTop, setShowBackToTop] = useState(false);
+  
+  // --- MODAL STATE ---
+  const [hotspotModal, setHotspotModal] = useState({ isOpen: false, type: '', data: null });
+  
   const scrollContainerRef = useRef(null); 
   const { layout: l, dashboard: d, ui } = design;
 
@@ -150,7 +168,7 @@ const Dashboard = () => {
 
   const scrollToTop = () => scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
 
-  // ✅ FILTERS
+  // FILTERS
   const filteredZones = selectedZoneId === 'all' 
     ? zones 
     : zones.filter(z => String(z.zone_id) === String(selectedZoneId));
@@ -169,32 +187,96 @@ const Dashboard = () => {
 
   const currentZoneName = selectedZoneId === 'all' ? 'All Zones' : zones.find(z => String(z.zone_id) === String(selectedZoneId))?.zone_name;
 
+  // --- 🔥 HOTSPOT ANALYTICS LOGIC ---
+  const topZones = useMemo(() => {
+    const counts = {};
+    allReports.forEach(report => {
+      const activeZone = zones.find(z => isPointInPolygon(report.latitude, report.longitude, z.boundaries));
+      const zoneName = activeZone ? activeZone.zone_name : 'Unassigned Territory';
+      
+      if (!counts[zoneName]) {
+        counts[zoneName] = { total: 0, issues: {} };
+      }
+      
+      counts[zoneName].total += 1;
+      counts[zoneName].issues[report.issue_type] = (counts[zoneName].issues[report.issue_type] || 0) + 1;
+    });
+    
+    return Object.entries(counts)
+      .map(([name, data]) => ({ name, count: data.total, issues: data.issues }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 4); 
+  }, [allReports, zones]);
+
+  const topBins = useMemo(() => {
+    const counts = {};
+    allReports.forEach(report => {
+      if (['Overflowing Bin', 'Missed Pickup'].includes(report.issue_type)) {
+        let nearestBin = null;
+        let minDistance = Infinity;
+        
+        allBins.forEach(bin => {
+          const dist = getDistanceInMeters(report.latitude, report.longitude, bin.latitude, bin.longitude);
+          if (dist < minDistance) {
+            minDistance = dist;
+            nearestBin = bin;
+          }
+        });
+
+        if (nearestBin && minDistance <= 50) {
+          const binName = nearestBin.bin_name;
+          if (!counts[binName]) {
+            // 🔥 Look up the zone name based on the bin's zone_id
+            const parentZone = zones.find(z => String(z.zone_id) === String(nearestBin.zone_id));
+            const zoneName = parentZone ? parentZone.zone_name : 'Unassigned Zone';
+            
+            counts[binName] = { total: 0, issues: {}, zoneName: zoneName };
+          }
+          counts[binName].total += 1;
+          counts[binName].issues[report.issue_type] = (counts[binName].issues[report.issue_type] || 0) + 1;
+        }
+      }
+    });
+
+    return Object.entries(counts)
+      .map(([name, data]) => ({ name, count: data.total, issues: data.issues, zoneName: data.zoneName }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 4); 
+  }, [allReports, allBins, zones]); // Added zones to dependencies
+  
+  // --- REAL DATA KPI CALCULATIONS ---
+  const binsCollectedToday = useMemo(() => {
+    return filteredBins.filter(b => b.collection_status === 'Collected').length;
+  }, [filteredBins]);
+
+  const missedPickupsCount = useMemo(() => {
+    return filteredReports.filter(r => r.issue_type === 'Missed Pickup').length;
+  }, [filteredReports]);
+
   if (!user) return null;
 
-const getRelativeTime = (dateString) => {
-  const now = new Date();
-  const posted = new Date(dateString);
-  const diffInSeconds = Math.floor((now - posted) / 1000);
-  const diffInHours = Math.floor(diffInSeconds / 3600);
+  const getRelativeTime = (dateString) => {
+    const now = new Date();
+    const posted = new Date(dateString);
+    const diffInSeconds = Math.floor((now - posted) / 1000);
+    const diffInHours = Math.floor(diffInSeconds / 3600);
 
-  // ✅ IF OLDER THAN 24H: Show Full Date (Month, Day, Year) + Exact Time
-  if (diffInHours >= 24) {
-    return posted.toLocaleString('en-US', { 
-      month: 'short', 
-      day: 'numeric', 
-      year: 'numeric', // Added the Year here
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true 
-    }).replace(',', ' •'); // Replaces the first comma with a bullet for cleaner look
-  }
+    if (diffInHours >= 24) {
+      return posted.toLocaleString('en-US', { 
+        month: 'short', 
+        day: 'numeric', 
+        year: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true 
+      }).replace(',', ' •');
+    }
 
-  // Standard Relative Logic for < 24 hrs
-  if (diffInSeconds < 60) return 'Just now';
-  const diffInMinutes = Math.floor(diffInSeconds / 60);
-  if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
-  return `${diffInHours}hr${diffInHours > 1 ? 's' : ''} ago`;
-};
+    if (diffInSeconds < 60) return 'Just now';
+    const diffInMinutes = Math.floor(diffInSeconds / 60);
+    if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
+    return `${diffInHours}hr${diffInHours > 1 ? 's' : ''} ago`;
+  };
 
   return (
     <div ref={scrollContainerRef} className="h-full overflow-y-auto relative bg-[#f0fdf4]" onClick={() => setIsDropdownOpen(false)}>
@@ -226,15 +308,13 @@ const getRelativeTime = (dateString) => {
         <div className="-mt-5">
           <h2 className="text-2xl font-bold text-[#1B5E20]">Dashboard Overview</h2>
           <p className="text-gray-600 text-sm">Real-time waste collection monitoring and management</p>
-
-         {/* <p className="text-gray-600 text-sm">Real-time waste collection monitoring and management Monitoring Area: <span className="font-bold text-green-700">{currentZoneName}</span></p>*/}
         </div>
 
         {/* KPI CARDS */}
         <div className={d.kpiGrid}>
           {[
-            { label: 'Bins Collected Today', value: '0' },
-            { label: 'Missed Pickups', value: '0' },
+            { label: 'Bins Collected', value: binsCollectedToday || '0' },
+            { label: 'Missed Pickups', value: missedPickupsCount || '0' },
             { label: 'Pending Reports', value: filteredReports.length || '0' },
             { label: 'Total Zones', value: zones.length || '0' }, 
           ].map((stat, i) => (
@@ -328,7 +408,6 @@ const getRelativeTime = (dateString) => {
         </div>
 
         {/* LOWER LOGS */}
-        {/* LOWER LOGS */}
         <div className={d.listGrid}>
           <div className={d.citizenCard}>
             <div className="p-5 flex justify-between items-center border-b bg-white rounded-t-2xl">
@@ -366,9 +445,9 @@ const getRelativeTime = (dateString) => {
                           <div className="flex justify-between items-start w-full">
                             <p className="text-sm font-black text-gray-800 line-clamp-1">{report.issue_type}</p>
                             
-                            {/* ✅ Shows Relative time or Full Date with Year/Time based on age */}
+                            {/* Shows Relative time or Full Date with Year/Time based on age */}
                             <p 
-                              title={new Date(report.created_at).toLocaleString()} // Native tooltip shows full raw timestamp on hover
+                              title={new Date(report.created_at).toLocaleString()} 
                               className="text-[10px] text-gray-400 font-bold uppercase tracking-tighter whitespace-nowrap ml-2 cursor-help"
                             >
                               {getRelativeTime(report.created_at)}
@@ -379,7 +458,6 @@ const getRelativeTime = (dateString) => {
                             Reported By: {report.reporter_name || 'Anonymous'}
                           </p>
 
-                          {/* ✅ DESCRIPTION ADDED BELOW */}
                           <p className="text-[11px] text-gray-500 line-clamp-1 mt-1 font-medium italic">
                             "{report.description || 'No description provided'}"
                           </p>
@@ -412,11 +490,235 @@ const getRelativeTime = (dateString) => {
             </div>
           </div>
         </div>
+
+        {/* --- 🔥 ENHANCED PROFESSIONAL HOTSPOT ANALYTICS CARD --- */}
+        <div className="mt-8 bg-white rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100 border-t-4 border-t-rose-500 overflow-hidden flex flex-col">
+          {/* Header */}
+          <div className="px-7 py-6 border-b border-slate-100 flex justify-between items-center bg-gradient-to-r from-rose-50/80 via-white to-white">
+            <div className="flex items-center gap-4">
+              <div className="p-3 rounded-2xl bg-white text-rose-600 shadow-[0_4px_20px_-4px_rgba(244,63,94,0.3)] border border-rose-100 flex items-center justify-center">
+                <BarChart3 size={24} strokeWidth={2.5} />
+              </div>
+              <div>
+                <h3 className="text-xl font-black text-slate-800 tracking-tight">Incident Hotspots</h3>
+                <p className="text-[13px] font-semibold text-slate-500 mt-1 flex items-center gap-1.5">
+                  <TrendingUp size={14} className="text-rose-400" />
+                  Automated system analytics based on recent reports
+                </p>
+              </div>
+            </div>
+            <span className="bg-white text-rose-600 px-4 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest flex items-center gap-2 border border-rose-100 shadow-sm">
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-rose-500"></span>
+              </span>
+              Live Data
+            </span>
+          </div>
+
+          {/* Content */}
+          <div className="p-7 grid grid-cols-1 lg:grid-cols-2 gap-8 bg-slate-50/40">
+            
+            {/* Top Zones Column */}
+            <div className="bg-white rounded-2xl p-6 border border-slate-100/80 shadow-sm">
+              <div className="flex justify-between items-center mb-5 pb-4 border-b border-slate-100">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-indigo-50 text-indigo-600">
+                    <MapPin size={18} strokeWidth={2.5} />
+                  </div>
+                  <h4 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Most Reported Zones</h4>
+                </div>
+              </div>
+              
+              <div className="space-y-3">
+                {topZones.length > 0 ? topZones.map((zone, idx) => (
+                  <div 
+                    key={idx} 
+                    onClick={() => setHotspotModal({ isOpen: true, type: 'Zone', data: zone })}
+                    className={`group flex items-center justify-between p-4 rounded-xl border cursor-pointer transition-all duration-300 hover:shadow-[0_4px_20px_-4px_rgba(0,0,0,0.08)] hover:-translate-y-0.5 ${idx === 0 ? 'border-indigo-200 bg-indigo-50/20 ring-1 ring-indigo-50' : 'border-slate-100 bg-white hover:border-indigo-200'}`}
+                  >
+                    <div className="flex items-center gap-4 overflow-hidden">
+                      <span className={`flex items-center justify-center w-7 h-7 rounded-lg text-xs font-black transition-colors ${idx === 0 ? 'bg-indigo-600 text-white shadow-md shadow-indigo-200' : 'bg-slate-100 text-slate-500 group-hover:bg-indigo-100 group-hover:text-indigo-600'}`}>
+                        {idx + 1}
+                      </span>
+                      <span className="font-bold text-slate-800 text-[15px] truncate">{zone.name}</span>
+                    </div>
+                    <div className="flex items-center gap-2 pl-3">
+                       <span className={`min-w-[40px] h-8 flex items-center justify-center rounded-lg text-xs font-black px-2.5 transition-colors shadow-sm border ${idx === 0 ? 'bg-indigo-600 text-white border-indigo-500' : 'bg-indigo-50 text-indigo-700 border-indigo-100 group-hover:bg-indigo-600 group-hover:text-white'}`}>
+                         {zone.count} <span className="ml-1.5 text-[9px] opacity-80 uppercase tracking-wider font-bold">Reports</span>
+                       </span>
+                    </div>
+                  </div>
+                )) : (
+                  <div className="flex flex-col items-center justify-center py-12 text-center bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
+                    <MapPin size={32} className="text-slate-300 mb-3" />
+                    <span className="text-sm text-slate-500 font-semibold">No zone incidents recorded</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Top Bins Column */}
+            <div className="bg-white rounded-2xl p-6 border border-slate-100/80 shadow-sm">
+              <div className="flex justify-between items-center mb-5 pb-4 border-b border-slate-100">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-rose-50 text-rose-600">
+                    <AlertOctagon size={18} strokeWidth={2.5} />
+                  </div>
+                  <h4 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Critical Waste Bins</h4>
+                </div>
+              </div>
+              
+              <div className="space-y-3">
+                {topBins.length > 0 ? topBins.map((bin, idx) => (
+                  <div 
+                    key={idx} 
+                    onClick={() => setHotspotModal({ isOpen: true, type: 'Waste Bin', data: bin })}
+                    className={`group flex items-center justify-between p-4 rounded-xl border cursor-pointer transition-all duration-300 hover:shadow-[0_4px_20px_-4px_rgba(0,0,0,0.08)] hover:-translate-y-0.5 ${idx === 0 ? 'border-rose-200 bg-rose-50/20 ring-1 ring-rose-50' : 'border-slate-100 bg-white hover:border-rose-200'}`}
+                  >
+                    <div className="flex items-center gap-4 overflow-hidden">
+                      <span className={`flex items-center justify-center shrink-0 w-7 h-7 rounded-lg text-xs font-black transition-colors ${idx === 0 ? 'bg-rose-500 text-white shadow-md shadow-rose-200' : 'bg-slate-100 text-slate-500 group-hover:bg-rose-100 group-hover:text-rose-600'}`}>
+                        {idx + 1}
+                      </span>
+                      {/* 🔥 NEW: Added Zone Name under the Bin Name */}
+                      <div className="flex flex-col truncate">
+                        <span className="font-bold text-slate-800 text-[15px] truncate leading-tight">{bin.name}</span>
+                        <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest truncate mt-0.5">{bin.zoneName}</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 pl-3">
+                       <span className={`min-w-[40px] h-8 flex items-center justify-center rounded-lg text-xs font-black px-2.5 transition-colors shadow-sm border ${idx === 0 ? 'bg-rose-500 text-white border-rose-400' : 'bg-rose-50 text-rose-700 border-rose-100 group-hover:bg-rose-500 group-hover:text-white'}`}>
+                         {bin.count} <span className="ml-1.5 text-[9px] opacity-80 uppercase tracking-wider font-bold">Issues</span>
+                       </span>
+                    </div>
+                  </div>
+                )) : (
+                  <div className="flex flex-col items-center justify-center py-12 text-center bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
+                    <AlertOctagon size={32} className="text-slate-300 mb-3" />
+                    <span className="text-sm text-slate-500 font-semibold">No critical bins detected</span>
+                  </div>
+                )}
+              </div>
+            </div>
+            
+          </div>
+        </div>
+        {/* --- END HOTSPOT ANALYTICS --- */}
+        
       </main>
 
       {showBackToTop && (
         <button onClick={scrollToTop} className={`${ui.backToTop} flex items-center justify-center animate-bounce z-[2000]`}><ArrowUp size={24} /></button>
       )}
+
+      {/* --- 🔥 ENHANCED DRILL-DOWN DETAILS MODAL --- */}
+      {hotspotModal.isOpen && hotspotModal.data && (
+        <div className="fixed inset-0 z-[6000] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-md animate-in fade-in duration-300">
+          <div className="bg-white rounded-[24px] shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-300 border border-white/20">
+            
+            {/* Modal Header with Graphic Watermark */}
+            <div className={`relative overflow-hidden p-6 ${hotspotModal.type === 'Zone' ? 'bg-gradient-to-br from-indigo-600 to-violet-700' : 'bg-gradient-to-br from-rose-500 to-red-600'}`}>
+              {/* Massive background watermark icon */}
+              <div className="absolute -right-8 -top-8 opacity-[0.15] pointer-events-none transform rotate-12">
+                {hotspotModal.type === 'Zone' ? <MapPin size={140} /> : <AlertOctagon size={140} />}
+              </div>
+              
+              <div className="relative z-10 flex justify-between items-start">
+                <div className="text-white flex-1 pr-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="p-1.5 bg-white/20 rounded-lg backdrop-blur-sm">
+                      {hotspotModal.type === 'Zone' ? <MapPin size={16} /> : <AlertOctagon size={16} />}
+                    </div>
+                    <span className="font-black text-[11px] uppercase tracking-widest text-white/90">
+                      {hotspotModal.type} Breakdown
+                    </span>
+                  </div>
+                  <h3 className="font-black text-2xl leading-tight text-white drop-shadow-md">
+                    {hotspotModal.data.name}
+                  </h3>
+                  {/* 🔥 NEW: Added Zone label inside the Bin Modal header */}
+                  {hotspotModal.type === 'Waste Bin' && hotspotModal.data.zoneName && (
+                    <p className="text-[13px] font-semibold text-white/80 mt-1.5 flex items-center gap-1.5">
+                      <MapPin size={14} className="opacity-70" /> {hotspotModal.data.zoneName}
+                    </p>
+                  )}
+                </div>
+                
+                <button 
+                  onClick={() => setHotspotModal({ isOpen: false, type: '', data: null })} 
+                  className="p-2 bg-white/10 hover:bg-white/25 rounded-xl transition-colors text-white backdrop-blur-md border border-white/10"
+                >
+                  <X size={20} strokeWidth={2.5} />
+                </button>
+              </div>
+            </div>
+            
+            {/* Modal Body */}
+            <div className="p-7">
+              <div className="flex items-center justify-between mb-6 pb-5 border-b border-slate-100">
+                <div>
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1">Total Issues Recorded</p>
+                  <p className="text-3xl font-black text-slate-800">{hotspotModal.data.count}</p>
+                </div>
+                <div className={`w-14 h-14 rounded-2xl flex items-center justify-center ${hotspotModal.type === 'Zone' ? 'bg-indigo-50 text-indigo-500' : 'bg-rose-50 text-rose-500'}`}>
+                  <BarChart3 size={28} strokeWidth={2.5} />
+                </div>
+              </div>
+              
+              <div className="space-y-5">
+                <h5 className="text-[11px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                  <TrendingUp size={14} /> Frequency Distribution
+                </h5>
+                
+                <div className="space-y-4">
+                  {(() => {
+                    // Calculate the max count to dynamically size the progress bars
+                    const maxCount = Math.max(...Object.values(hotspotModal.data.issues));
+                    
+                    return Object.entries(hotspotModal.data.issues)
+                      .sort((a, b) => b[1] - a[1]) // Sort highest to lowest
+                      .map(([issueName, issueCount], i) => {
+                        const percentage = Math.round((issueCount / maxCount) * 100);
+                        
+                        return (
+                          <div key={i} className="group">
+                            <div className="flex justify-between items-end mb-2">
+                              <span className="font-bold text-slate-700 text-[13px]">{issueName}</span>
+                              <span className="font-black text-slate-900 text-sm">{issueCount}</span>
+                            </div>
+                            {/* Progress Bar Track */}
+                            <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
+                               {/* Progress Bar Fill */}
+                               <div 
+                                 className={`h-full rounded-full transition-all duration-1000 ease-out relative overflow-hidden ${hotspotModal.type === 'Zone' ? 'bg-indigo-500' : 'bg-rose-500'}`} 
+                                 style={{ width: `${percentage}%` }}
+                               >
+                                  {/* Glossy overlay effect on the bar */}
+                                  <div className="absolute top-0 left-0 right-0 bottom-0 bg-gradient-to-b from-white/20 to-transparent rounded-full" />
+                               </div>
+                            </div>
+                          </div>
+                        );
+                      });
+                  })()}
+                </div>
+              </div>
+            </div>
+            
+            {/* Modal Footer */}
+            <div className="p-5 border-t border-slate-100 bg-slate-50/50 flex justify-end">
+              <button 
+                onClick={() => setHotspotModal({ isOpen: false, type: '', data: null })}
+                className="px-6 py-2.5 bg-white border border-slate-200 text-slate-700 font-bold rounded-xl text-sm shadow-sm hover:shadow-md hover:border-slate-300 hover:bg-slate-50 transition-all focus:ring-2 focus:ring-slate-200 focus:outline-none"
+              >
+                Close View
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* --- END MODAL --- */}
+
     </div>
   );
 };

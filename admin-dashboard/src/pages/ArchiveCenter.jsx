@@ -65,7 +65,7 @@ const ArchiveCenter = () => {
 
   const scrollToTop = () => scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
 
-  // ROBUST EXTRACTORS FOR DIFFERENT DATABASE SCHEMAS
+  // EXTRACTORS FOR DIFFERENT DATABASE SCHEMAS
   const getItemId = (item) => item.id || item.report_id || item.task_id || item.vehicle_id || item.bin_id || item.zone_id || item.announcement_id || item.user_id;
   const getItemName = (item) => item.title || item.zone_name || item.vehicle_name || item.binName || item.name || (item.first_name ? `${item.first_name} ${item.last_name}` : null) || item.issue_type || item.description || 'Unnamed Item';
 
@@ -85,11 +85,7 @@ const ArchiveCenter = () => {
     return name.includes(searchTerm.toLowerCase()) || idStr.includes(searchTerm.toLowerCase());
   });
 
-  /* =========================================================================
-     SPECIFIC RENDERERS FOR EACH TAB (MATCHING ACTIVE PAGE LAYOUTS)
-  ========================================================================= */
-
-  // ✅ PERFECTED ANNOUNCEMENTS RENDERER
+  // PERFECTED ANNOUNCEMENTS RENDERER
   const renderAnnouncements = () => (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 pb-10">
       {filteredData.map((item) => (

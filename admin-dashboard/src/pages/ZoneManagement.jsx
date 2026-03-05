@@ -9,11 +9,11 @@ import { design } from '../styles/design';
 import Notification from '../components/Notification';
 import AddZoneModal from '../components/AddZoneModal';
 import AddBinModal from '../components/AddBinModal';
-import ConfirmDialog from '../components/ConfirmDialog'; // ✅ Added for modern archiving
+import ConfirmDialog from '../components/ConfirmDialog'; 
 
 // SERVICES & CONTEXT
 import { zoneService } from '../services/zoneService';
-import { archiveService } from '../services/archiveService'; // ✅ Added for Archive Center
+import { archiveService } from '../services/archiveService'; //not use
 import { useUser } from '../context/UserContext'; 
 
 const mainMapBinIcon = new L.DivIcon({
@@ -48,7 +48,7 @@ const ZoneManagement = () => {
   const [activeZoneForBin, setActiveZoneForBin] = useState(null);
   const [zoneBins, setZoneBins] = useState([]);
 
-  // ✅ ARCHIVE CENTER STATES
+  // ARCHIVE CENTER STATES
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [zoneToArchive, setZoneToArchive] = useState(null);
 
@@ -73,7 +73,7 @@ const ZoneManagement = () => {
         zoneService.getAllBins()
       ]);
       
-      // ✅ Updated to only show non-archived zones in active management
+      // only show non-archived zones in active management
       setZones((zoneData || []).filter(z => !z.is_archived));
       setAllBins(binData || []);
     } catch (err) { console.error("Data Load Error", err); }
@@ -98,7 +98,7 @@ const ZoneManagement = () => {
     }
   };
 
-  // ✅ Updated Deletion to use Archiving
+  // Archiving
   const handleDeleteZone = (id) => {
     setZoneToArchive(id);
     setIsConfirmOpen(true);
@@ -106,7 +106,7 @@ const ZoneManagement = () => {
 
   const handleConfirmArchive = async () => {
     try {
-      // ✅ Check if it actually returns true
+      //  Check if it actually returns true
       const success = await zoneService.deleteZone(zoneToArchive); 
       
       if (!success) {
@@ -117,7 +117,7 @@ const ZoneManagement = () => {
       setIsConfirmOpen(false);
       triggerNotify("Zone moved to Archive Center", "warning");
     } catch (err) {
-      // ✅ Now it will properly show an error if it fails!
+      //it will properly show an error if it fails!
       setIsConfirmOpen(false);
       triggerNotify("Failed to archive zone", "error"); 
     }
@@ -216,7 +216,7 @@ const ZoneManagement = () => {
             <h2 className="text-3xl font-bold text-[#1B5E20]">Zone Boundaries</h2>
             <p className="text-gray-600 text-sm">Monitor and manage waste collection areas</p>
           </div>
-          {/* ✅ ARCHIVE CENTER SHORTCUT */}
+          {/* ARCHIVE CENTER SHORTCUT */}
           <button 
             onClick={() => navigate("/archive-center")}
             className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-400 hover:text-emerald-600 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-sm"
@@ -361,7 +361,7 @@ const ZoneManagement = () => {
         existingBins={zoneBins}
       />
 
-      {/* MODERN ARCHIVE CONFIRMATION */}
+      {/* ARCHIVE CONFIRMATION */}
       <ConfirmDialog 
         isOpen={isConfirmOpen}
         onClose={() => setIsConfirmOpen(false)}

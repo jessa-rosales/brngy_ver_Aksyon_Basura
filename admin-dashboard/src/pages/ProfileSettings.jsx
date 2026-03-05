@@ -23,7 +23,7 @@ const ProfileSettings = () => {
 
   const { layout: l, userManagement: u } = design;
 
-  // ✅ Helper to format date safely without timezone shifting
+  // format date safely without timezone shifting
   const formatDateForInput = (dateString) => {
     if (!dateString) return '';
     const date = new Date(dateString);
@@ -53,7 +53,7 @@ const ProfileSettings = () => {
   const handleUpdate = async (e) => {
     e.preventDefault();
     try {
-      // ✅ 1. ADDED PROFILE PICTURE TO THE PAYLOAD
+      // PROFILE PICTURE TO THE PAYLOAD
       const updatePayload = {
         firstName: adminUser.first_name,
         lastName: adminUser.last_name,
@@ -64,13 +64,13 @@ const ProfileSettings = () => {
         gender: formData.gender,
         birthday: formData.birthday,
         address: formData.address,
-        profile_picture: adminUser.profile_picture // <-- CRITICAL: Prevents photo from being deleted
+        profile_picture: adminUser.profile_picture // Prevents photo from being deleted
       };
 
       const result = await userService.updateUser(adminUser.user_id, updatePayload);
 
       if (result) {
-        // ✅ 2. Safely merge, ensuring the profile picture and role survive
+        // Safely merge, ensuring the profile picture and role survive
         const safeUpdatedUser = { 
           ...adminUser, 
           ...result, 

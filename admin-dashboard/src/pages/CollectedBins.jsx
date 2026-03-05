@@ -92,13 +92,13 @@ const CollectedBins = () => {
     setIsModalOpen(true);
   };
 
-  // TRIGGER THE CUSTOM DIALOG (Replaces window.confirm)
+  // TRIGGER THE CUSTOM DIALOG
   const handleArchive = (id) => {
     setBinToArchive(id);
     setIsConfirmOpen(true);
   };
 
-  // ACTUAL ARCHIVE EXECUTION
+  // ARCHIVE EXECUTION
   const handleConfirmArchive = async () => {
     try {
       setLoading(true);
@@ -301,7 +301,7 @@ const CollectedBins = () => {
         ) : filteredBins.length > 0 ? (
           
           viewMode === 'grid' ? (
-            /* ================= GRID VIEW ================= */
+            /* GRID VIEW  */
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8 pb-10">
               {filteredBins.map((bin) => (
                 <div 
@@ -392,7 +392,7 @@ const CollectedBins = () => {
               ))}
             </div>
           ) : (
-            /* ================= LIST VIEW ================= */
+            /* LIST VIEW */
             <div className="bg-white rounded-[32px] border border-slate-100 shadow-sm overflow-hidden pb-4">
               <div className="overflow-x-auto">
                 <table className="w-full text-sm text-left">

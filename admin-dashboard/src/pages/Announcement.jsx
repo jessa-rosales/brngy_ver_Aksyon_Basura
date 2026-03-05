@@ -4,7 +4,7 @@ import {
   Search, Bell, Plus, Megaphone, Calendar, 
   User, Trash2, X, ChevronDown, Clock, RefreshCcw,
   ShieldAlert, Wrench, Info, FileText, XCircle, CheckCircle,
-  Archive // ✅ Added Archive Icon
+  Archive
 } from 'lucide-react'; 
 import { design } from '../styles/design'; 
 
@@ -16,7 +16,7 @@ import { useUser } from '../context/UserContext';
 import Notification from '../components/Notification';
 import CreateAnnouncementModal from '../components/CreateAnnouncementModal';
 import AnnouncementDetailsModal from '../components/AnnouncementDetailsModal';
-import ConfirmDialog from '../components/ConfirmDialog'; // ✅ Added ConfirmDialog
+import ConfirmDialog from '../components/ConfirmDialog'; // ConfirmDialog
 
 const Announcement = () => {
   const navigate = useNavigate();
@@ -35,15 +35,13 @@ const Announcement = () => {
   const [isEditMode, setIsEditMode] = useState(false);
   const [activeFilter, setActiveFilter] = useState(null); 
 
-  // ✅ NEW ARCHIVE STATES
+  // ARCHIVE STATES
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [itemToArchive, setItemToArchive] = useState(null);
 
   const { layout: l, userManagement: u } = design;
 
-  /* ==========================================
-      INITIALIZATION
-     ========================================== */
+  /* INITIALIZATION */
   useEffect(() => {
     if (!user) {
       navigate("/login");
@@ -66,9 +64,7 @@ const Announcement = () => {
     } catch (err) { console.error(err); }
   };
 
-  /* ==========================================
-      DATA CONFIG FOR CUSTOM DROPDOWNS
-     ========================================== */
+  /*FOR CUSTOM DROPDOWNS */
   const categoryOptions = [
     { label: 'All Types', icon: Megaphone, color: 'text-gray-400' },
     { label: 'Schedule', icon: Calendar, color: 'text-blue-500' },
@@ -84,9 +80,7 @@ const Announcement = () => {
     { label: 'Archived', icon: XCircle, color: 'text-red-600' },
   ];
 
-  /* ==========================================
-      ACTIONS
-     ========================================== */
+  /* ACTIONS */
   const triggerNotify = (msg, type = 'success') => setNotify({ show: true, msg, type });
 
   const handleCardClick = (ann) => {
@@ -135,13 +129,13 @@ const Announcement = () => {
     }
   };
 
-  // ✅ UPDATED ARCHIVE LOGIC (Trigger Modal)
+  //  ARCHIVE LOGIC (Trigger Modal)
   const triggerArchive = (id) => {
     setItemToArchive(id);
     setIsConfirmOpen(true);
   };
 
-  // ✅ EXECUTING THE ARCHIVE (Soft Delete)
+  // EXECUTING THE ARCHIVE (Soft Delete)
   const handleConfirmArchive = async () => {
     try {
       const success = await announcementService.deleteAnnouncement(itemToArchive);
@@ -157,9 +151,7 @@ const Announcement = () => {
     }
   };
 
-  /* ==========================================
-      FILTERING LOGIC
-     ========================================== */
+  /* FILTERING LOGIC*/
   const filteredAnnouncements = announcements.filter(item => {
     const matchesSearch = item.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                           item.content?.toLowerCase().includes(searchTerm.toLowerCase());
@@ -216,7 +208,7 @@ const Announcement = () => {
 
       <main className="p-8 space-y-8">
         
-        {/* ✅ ADDED ARCHIVE BUTTON TO TITLE SECTION */}
+        {/* ARCHIVE BUTTON TO TITLE SECTION */}
         <div className="flex justify-between items-end">
           <div className={u.titleSection}>
             <h2 className="text-2xl font-bold text-[#1B5E20]">Announcement</h2>
@@ -351,7 +343,7 @@ const Announcement = () => {
 
       <CreateAnnouncementModal isOpen={isModalOpen} onClose={handleCloseForm} onCreate={handleAnnouncementSubmit} editData={isEditMode ? selectedAnn : null} />
       
-      {/* ✅ UPDATED MODAL: Replaced onDelete with onArchive */}
+      {/* MODAL onArchive */}
       <AnnouncementDetailsModal 
         isOpen={isDetailsOpen} 
         onClose={() => setIsDetailsOpen(false)} 
@@ -360,7 +352,7 @@ const Announcement = () => {
         onEdit={handleEditClick} 
       />
 
-      {/* ✅ ADDED CONFIRM DIALOG */}
+      {/* CONFIRM DIALOG */}
       <ConfirmDialog 
         isOpen={isConfirmOpen}
         onClose={() => setIsConfirmOpen(false)}

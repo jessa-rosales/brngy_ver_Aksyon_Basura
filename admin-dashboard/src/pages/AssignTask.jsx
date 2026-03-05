@@ -371,7 +371,7 @@ const AssignTask = () => {
                                 </div>
                               </td>
 
-                              {/* ✅ UPDATED TRUCK FLEET ASSET CELL (ARCHIVE STRIKE-THROUGH LOGIC) */}
+                              {/* UPDATED TRUCK VEHICLE CELL (ARCHIVE STRIKE-THROUGH LOGIC) */}
                               <td className="px-6 py-6 align-top">
                                 <div className="flex flex-col gap-1.5">
                                   <div className="flex items-center gap-2 text-[12px] font-bold text-slate-700">

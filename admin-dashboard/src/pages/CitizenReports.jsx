@@ -11,14 +11,14 @@ import { design } from '../styles/design';
 import { useUser } from '../context/UserContext';
 import { reportService } from '../services/reportService'; 
 import { zoneService } from '../services/zoneService'; 
-import { assignmentService } from '../services/assignmentService'; // ✅ Added Assignment Service
+import { assignmentService } from '../services/assignmentService'; 
 
 // COMPONENTS
 import ReportDetailsModal from '../components/ReportDetailsModal';
 import ReportNavigationModal from '../components/ReportNavigationModal';
 import ConfirmDialog from '../components/ConfirmDialog'; 
 import Notification from '../components/Notification'; 
-import TeamSelectionModal from '../components/TeamSelectionModal'; // ✅ Added Team Selection Modal
+import TeamSelectionModal from '../components/TeamSelectionModal'; 
 
 const CitizenReports = () => {
   const navigate = useNavigate();
@@ -29,7 +29,7 @@ const CitizenReports = () => {
   // STATE MANAGEMENT
   const [reports, setReports] = useState([]);
   const [zones, setZones] = useState([]); 
-  const [teams, setTeams] = useState([]); // ✅ Added Teams State
+  const [teams, setTeams] = useState([]); 
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('All Types');
@@ -39,7 +39,7 @@ const CitizenReports = () => {
   
   // MODAL & UI STATES
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
-  const [isTeamModalOpen, setIsTeamModalOpen] = useState(false); // ✅ Added Team Modal State
+  const [isTeamModalOpen, setIsTeamModalOpen] = useState(false); 
   const [selectedReport, setSelectedReport] = useState(null);
   const [activeFilter, setActiveFilter] = useState(null); 
   const [isNavModalOpen, setIsNavModalOpen] = useState(false);
@@ -71,11 +71,11 @@ const CitizenReports = () => {
       const [reportRes, zoneRes, teamRes] = await Promise.all([
         reportService.getAllReports(),
         zoneService.getZones(),
-        assignmentService.getAssignments() // ✅ Fetching Teams
+        assignmentService.getAssignments() //Fetching Teams
       ]);
       if (reportRes.success) setReports(reportRes.reports);
       if (zoneRes) setZones(zoneRes);
-      if (Array.isArray(teamRes)) setTeams(teamRes); // ✅ Setting Teams
+      if (Array.isArray(teamRes)) setTeams(teamRes); //Setting Teams
     } catch (error) {
       console.error("Error fetching data:", error);
     } finally {
@@ -149,17 +149,17 @@ const CitizenReports = () => {
     }
   };
 
-  // ✅ HANDLER FOR TEAM ASSIGNMENT TRIGGER
+  // HANDLER FOR TEAM ASSIGNMENT TRIGGER
   const handleOpenTeamSelection = (report) => {
     setSelectedReport(report);
     setIsDetailsOpen(false); // Close details to show selection
     setIsTeamModalOpen(true);
   };
 
-  // ✅ HANDLER FOR CONFIRMING THE TEAM
+  // HANDLER FOR CONFIRMING THE TEAM
   const handleConfirmTeamSelection = async (team) => {
   try {
-    // Call the new service method that hits your database
+    // Call the new service method that hits my database
     const result = await reportService.assignTeamToReport(
       selectedReport.report_id, 
       team.task_id
@@ -457,7 +457,7 @@ const CitizenReports = () => {
         />
       )}
 
-      {/* ✅ Added Team Selection Modal */}
+    
       {/* Team Selection Modal */}
       <TeamSelectionModal 
         isOpen={isTeamModalOpen}
@@ -465,8 +465,8 @@ const CitizenReports = () => {
         teams={teams}
         report={selectedReport}
         onSelect={handleConfirmTeamSelection}
-        allReports={reports} // ✅ PASSED NEW PROP
-        allZones={zones}     // ✅ PASSED NEW PROP
+        allReports={reports}
+        allZones={zones}
       />
 
       <ConfirmDialog 

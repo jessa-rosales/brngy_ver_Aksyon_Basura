@@ -4,12 +4,12 @@ import AddUserModal from '../components/AddUserModal';
 import { 
   Search, Bell, Edit, Trash2, UserPlus, ChevronDown, X, Users, 
   ShieldCheck, Truck, HardHat, UserCircle, Eye, Mail, Phone, 
-  MapPin, User, Cake, Archive // ✅ Added Archive Icon
+  MapPin, User, Cake, Archive
 } from 'lucide-react'; 
 import { design } from '../styles/design'; 
 import Notification from '../components/Notification';
 import { userService } from '../services/userService';
-import ConfirmDialog from '../components/ConfirmDialog'; // ✅ Added ConfirmDialog
+import ConfirmDialog from '../components/ConfirmDialog';
 
 // CONTEXT
 import { useUser } from '../context/UserContext';
@@ -21,7 +21,7 @@ const UserManagement = () => {
   
   // FILTERS
   const [filterRole, setFilterRole] = useState('All Types');
-  const [filterStatus, setFilterStatus] = useState('All Status'); // ✅ NEW STATUS FILTER
+  const [filterStatus, setFilterStatus] = useState('All Status');
   
   const [users, setUsers] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -32,7 +32,7 @@ const UserManagement = () => {
   
   const [notify, setNotify] = useState({ show: false, msg: '', type: 'success' });
 
-  // ✅ NEW ARCHIVE STATES
+  // ARCHIVE STATES
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [userToArchive, setUserToArchive] = useState(null);
 
@@ -155,14 +155,14 @@ const UserManagement = () => {
     setSelectedUser(null);
   };
 
-  // ✅ UPDATED ARCHIVE LOGIC (Trigger Modal)
+  // ARCHIVE LOGIC (Trigger Modal)
   const triggerArchive = (id, e) => {
     e.stopPropagation();
     setUserToArchive(id);
     setIsConfirmOpen(true);
   };
 
-  // ✅ EXECUTING THE ARCHIVE (Soft Delete)
+  //EXECUTING THE ARCHIVE (Soft Delete)
   const handleConfirmArchive = async () => {
     try {
       // Calls existing deleteUser method which the backend now handles as an Archive
@@ -181,7 +181,7 @@ const UserManagement = () => {
     }
   };
 
-  // ✅ UPDATED FILTER LOGIC: Now checks both Role AND Status
+  // UPDATED FILTER LOGIC: Now checks both Role AND Status
   const filteredUsers = users.filter(user => {
     const fullName = `${user.first_name} ${user.last_name}`.toLowerCase();
     const searchLower = searchTerm.toLowerCase();
@@ -236,7 +236,7 @@ const UserManagement = () => {
 
       <main className="p-8">
         
-        {/* ✅ ADDED ARCHIVE BUTTON TO TITLE SECTION */}
+        {/* ARCHIVE BUTTON TO TITLE SECTION */}
         <div className="flex justify-between items-end mb-6">
           <div className={u.titleSection} style={{ marginBottom: 0 }}>
             <h2 className="text-2xl font-bold text-[#1B5E20]">User Management</h2>
@@ -274,7 +274,7 @@ const UserManagement = () => {
               <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 pointer-events-none" size={16} />
             </div>
 
-            {/* ✅ NEW STATUS FILTER */}
+            {/* STATUS FILTER */}
             <div className="relative">
               <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className={u.filterSelect}>
                 <option value="All Status">All Status</option>
@@ -320,7 +320,7 @@ const UserManagement = () => {
                       onClick={() => setViewUser(user)} 
                     >
                       <td className={`${u.tableCell} font-medium`}>#{user.user_id}</td>
-                      <td className={`${u.tableCell} font-bold text-gray-800`}>{user.first_name} {user.last_name}</td>
+                      <td className={`${u.tableCell} font-bold text-gray-800`}>{user.last_name},  {user.first_name}</td>
                       <td className={u.tableCell}>{user.contact_number}</td>
                       <td className={u.tableCell}>{user.email}</td>
                       <td className={u.tableCell}>
@@ -337,7 +337,7 @@ const UserManagement = () => {
                         <div className="flex items-center justify-center gap-3">
                           <button onClick={(e) => { e.stopPropagation(); setViewUser(user); }} className="text-gray-400 hover:text-green-600" title="View"><Eye size={18} /></button>
                           <button onClick={(e) => openEditModal(user, e)} className="text-blue-500 hover:text-blue-700" title="Edit"><Edit size={18} /></button>
-                          {/* ✅ REPLACED DELETE ICON WITH ARCHIVE ICON */}
+                          {/* ARCHIVE ICON */}
                           <button onClick={(e) => triggerArchive(user.user_id, e)} className="text-red-500 hover:text-red-700" title="Archive"><Archive size={18} /></button>
                         </div>
                       </td>
@@ -363,7 +363,7 @@ const UserManagement = () => {
         onClose={() => setViewUser(null)} 
       />
 
-      {/* ✅ ADDED CONFIRM DIALOG FOR ARCHIVING */}
+      {/* CONFIRM DIALOG FOR ARCHIVING */}
       <ConfirmDialog 
         isOpen={isConfirmOpen}
         onClose={() => setIsConfirmOpen(false)}
