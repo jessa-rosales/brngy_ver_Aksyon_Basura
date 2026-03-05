@@ -30,6 +30,8 @@ const getMobileAssignment = async (req, res) => {
       WHERE 
         (ta.driver_id = $1 OR tc.collector_id = $1)
         AND ta.status IN ('Pending', 'Assigned', 'In Progress', 'Active')
+        AND ta.is_archived = false -- ✅ STRICT FIX: Excludes archived schedules/tasks
+        AND z.is_archived = false  -- ✅ STRICT FIX: Excludes archived zones
     `;
     
     const result = await pool.query(query, [userId]);
@@ -39,12 +41,11 @@ const getMobileAssignment = async (req, res) => {
     }
 
     const assignmentsWithBins = await Promise.all(result.rows.map(async (assignment) => {
-      // 🔥 UPDATED: Dynamically checks if the photo evidence already exists in the database
       const binsQuery = `
         SELECT 
           wb.bin_id, ST_Y(wb.location::geometry) as lat, ST_X(wb.location::geometry) as lng, 
           'General' as type, wb.collection_status as status, wb.bin_address as address,
-          wb.last_collected_timestamp, -- ✅ Added this so the app knows WHEN it was last collected
+          wb.last_collected_timestamp, 
           EXISTS(SELECT 1 FROM collection_records cr WHERE cr.bin_id = wb.bin_id AND cr.task_id = $2) as evidence_submitted
         FROM waste_bins wb 
         WHERE wb.zone_id = $1
@@ -63,6 +64,71 @@ const getMobileAssignment = async (req, res) => {
   }
 };
 
+// ✅ NEW: Start Duty Session
+const startDuty = async (req, res) => {
+    const { userId, vehicleId } = req.body;
+    try {
+        await pool.query('BEGIN');
+        
+        // 1. Mark user as On Duty
+        await pool.query('UPDATE users SET is_on_duty = true WHERE user_id = $1', [userId]);
+        
+        // 2. Create a new log entry
+        const logResult = await pool.query(
+            `INSERT INTO duty_logs (user_id, vehicle_id, status) 
+             VALUES ($1, $2, 'Active') RETURNING log_id`,
+            [userId, vehicleId]
+        );
+
+        await pool.query('COMMIT');
+        res.status(201).json({ success: true, log_id: logResult.rows[0].log_id });
+    } catch (error) {
+        await pool.query('ROLLBACK');
+        console.error("Start Duty Error:", error);
+        res.status(500).json({ success: false, message: 'Failed to start duty' });
+    }
+};
+
+// ✅ NEW: End Duty Session (and "Park" the vehicle)
+// ✅ UPDATED: End Duty Session (and "Park" the vehicle using separate lat/lng columns)
+// ✅ UPDATED: End Duty Session (and "Park" the vehicle using separate lat/lng columns)
+const endDuty = async (req, res) => {
+    const { userId, vehicleId, lat, lng } = req.body;
+    try {
+        await pool.query('BEGIN');
+
+        // 1. Mark user as Off Duty
+        await pool.query('UPDATE users SET is_on_duty = false WHERE user_id = $1', [userId]);
+
+        // 2. Close the active log
+        await pool.query(
+            `UPDATE duty_logs 
+             SET end_time = NOW(), 
+                 status = 'Completed',
+                 last_known_lat = $2,
+                 last_known_lng = $3
+             WHERE user_id = $1 AND status = 'Active'`,
+            [userId, lat, lng] 
+        );
+
+        // 3. ✅ NEW: SECURE THE VEHICLE'S EXACT PARKING SPOT IN THE DB
+        if (vehicleId && lat && lng) {
+            await pool.query(
+                `UPDATE vehicles 
+                 SET current_location = ST_SetSRID(ST_MakePoint($1::numeric, $2::numeric), 4326)
+                 WHERE vehicle_id = $3`,
+                [lng, lat, vehicleId]
+            );
+        }
+
+        await pool.query('COMMIT');
+        res.status(200).json({ success: true, message: 'Duty ended and vehicle parked.' });
+    } catch (error) {
+        await pool.query('ROLLBACK');
+        console.error("End Duty Error:", error);
+        res.status(500).json({ success: false, message: 'Failed to end duty' });
+    }
+};
 // 📸 UPDATED: Save the collection record using Multer
 // 📸 UPDATED: Save the collection record using Multer (with safe integer parsing)
 const saveCollectionRecord = async (req, res) => {
@@ -295,6 +361,123 @@ const getAllReports = async (req, res) => {
     }
 };
 
+// Fetch Completed Tasks for Driver/Collector History for MyCollectionHistory.jsx
+const getCollectionHistory = async (req, res) => {
+    const currentUserId = req.user.id; 
+
+    try {
+        const query = `
+            -- 1. Get Resolved Citizen Reports (Excluding Archived)
+            SELECT 
+                r.report_id AS id,
+                'Report' AS entry_type,
+                r.issue_type::text AS title,
+                r.location_address AS address,
+                r.resolved_photo_url AS evidence_image,
+                r.resolved_at AS timestamp,
+                z.zone_name,
+                CONCAT(collector.first_name, ' ', collector.last_name) AS collector_name,
+                CONCAT(driver.first_name, ' ', driver.last_name) AS driver_name
+            FROM citizen_reports r
+            LEFT JOIN users collector ON r.photo_uploaded_by = collector.user_id
+            LEFT JOIN users driver ON r.confirmed_by = driver.user_id
+            LEFT JOIN task_assignments ta ON r.assigned_team_id = ta.task_id
+            LEFT JOIN zones z ON ta.zone_id = z.zone_id
+            WHERE (ta.driver_id = $1 OR ta.task_id IN (SELECT task_id FROM task_collectors WHERE collector_id = $1))
+            AND r.status = 'Resolved'
+            AND r.is_archived = false -- ✅ Filter out archived reports
+
+            UNION ALL
+
+            -- 2. Get Bin Collection Records (Excluding Archived)
+            SELECT 
+                cr.record_id AS id,
+                'Bin Collection' AS entry_type,
+                wb.bin_name AS title,
+                wb.bin_address AS address,
+                cr.photo_proof_url AS evidence_image,
+                cr.timestamp AS timestamp,
+                z.zone_name,
+                CONCAT(p.first_name, ' ', p.last_name) AS collector_name,
+                CONCAT(d.first_name, ' ', d.last_name) AS driver_name
+            FROM collection_records cr
+            JOIN waste_bins wb ON cr.bin_id = wb.bin_id
+            JOIN task_assignments ta ON cr.task_id = ta.task_id
+            JOIN zones z ON ta.zone_id = z.zone_id
+            JOIN users p ON cr.personnel_id = p.user_id
+            LEFT JOIN users d ON ta.driver_id = d.user_id
+            WHERE (ta.driver_id = $1 OR ta.task_id IN (SELECT task_id FROM task_collectors WHERE collector_id = $1))
+            AND cr.is_archived = false -- ✅ Filter out archived bin logs
+
+            ORDER BY timestamp DESC;
+        `;
+        
+        const result = await pool.query(query, [currentUserId]);
+        res.status(200).json({ success: true, data: result.rows });
+    } catch (error) {
+        console.error("Unified History Filter Error:", error);
+        res.status(500).json({ success: false, message: 'Server Error' });
+    }
+};
+
+//For Driver and Collector Archive Center in ArchiveHistoryScreen.jsx
+const getArchivedCollectionHistory = async (req, res) => {
+    const currentUserId = req.user.id; 
+
+    try {
+        const query = `
+            -- 1. Get Archived Citizen Reports
+            SELECT 
+                r.report_id AS id,
+                'Report' AS entry_type,
+                r.issue_type::text AS title,
+                r.location_address AS address,
+                r.resolved_photo_url AS evidence_image,
+                r.resolved_at AS timestamp,
+                z.zone_name,
+                CONCAT(collector.first_name, ' ', collector.last_name) AS collector_name,
+                CONCAT(driver.first_name, ' ', driver.last_name) AS driver_name
+            FROM citizen_reports r
+            LEFT JOIN users collector ON r.photo_uploaded_by = collector.user_id
+            LEFT JOIN users driver ON r.confirmed_by = driver.user_id
+            LEFT JOIN task_assignments ta ON r.assigned_team_id = ta.task_id
+            LEFT JOIN zones z ON ta.zone_id = z.zone_id
+            WHERE (ta.driver_id = $1 OR ta.task_id IN (SELECT task_id FROM task_collectors WHERE collector_id = $1))
+            AND r.is_archived = true -- ✅ Only show archived
+
+            UNION ALL
+
+            -- 2. Get Archived Bin Logs
+            SELECT 
+                cr.record_id AS id,
+                'Bin Collection' AS entry_type,
+                wb.bin_name AS title,
+                wb.bin_address AS address,
+                cr.photo_proof_url AS evidence_image,
+                cr.timestamp AS timestamp,
+                z.zone_name,
+                CONCAT(p.first_name, ' ', p.last_name) AS collector_name,
+                CONCAT(d.first_name, ' ', d.last_name) AS driver_name
+            FROM collection_records cr
+            JOIN waste_bins wb ON cr.bin_id = wb.bin_id
+            JOIN task_assignments ta ON cr.task_id = ta.task_id
+            JOIN zones z ON ta.zone_id = z.zone_id
+            JOIN users p ON cr.personnel_id = p.user_id
+            LEFT JOIN users d ON ta.driver_id = d.user_id
+            WHERE (ta.driver_id = $1 OR ta.task_id IN (SELECT task_id FROM task_collectors WHERE collector_id = $1))
+            AND cr.is_archived = true -- ✅ Only show archived
+
+            ORDER BY timestamp DESC;
+        `;
+        
+        const result = await pool.query(query, [currentUserId]);
+        res.status(200).json({ success: true, data: result.rows });
+    } catch (error) {
+        console.error("Archive History Error:", error);
+        res.status(500).json({ success: false, message: 'Server Error' });
+    }
+};
+
 // ✅ NEW: Endpoint to archive reports from the mobile app
 const archiveReport = async (req, res) => {
     const { report_id } = req.body;
@@ -370,11 +553,15 @@ const getArchivedReports = async (req, res) => {
 // ✅ UPDATED EXPORTS: Added getAllReports
 module.exports = { 
   getMobileAssignment, 
+  startDuty,
+  endDuty,
   saveCollectionRecord, 
   confirmBinCollection, 
   updateVehicleLocation,
   getActiveTrackingRoutes,
   getAllReports,
+  getCollectionHistory,
+  getArchivedCollectionHistory,
   archiveReport,
   getArchivedReports
 };
