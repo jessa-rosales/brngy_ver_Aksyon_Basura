@@ -33,6 +33,8 @@ import NewsScreen from '../pages/NewsScreen';
 import GuideScreen from '../pages/GuideScreen';
 import ProfileScreen from '../pages/ProfileScreen';
 import UserReportsScreen from '../pages/UserReportsScreen';
+import CollectionHistoryScreen from '../pages/CollectionHistoryScreen';
+import ArchiveHistoryScreen from '../pages/ArchiveHistoryScreen';
 import EditProfileScreen from '../pages/EditProfileScreen';
 import ArchiveCenter from '../pages/ArchiveCenter';
 import LiveMapScreen from '../pages/LiveMapScreen';
@@ -52,7 +54,7 @@ const themeColor = '#1B5E20';
 const CustomHeaderTitle = ({ role }) => (
   <View style={styles.headerContainer}>
     <Image 
-      source={require('../../assets/Logo.png')} 
+      source={require('../../assets/logo6.png')} 
       style={styles.headerLogo}
       resizeMode="contain"
     />
@@ -202,6 +204,8 @@ const AppNavigator = () => {
           }}
         />
 
+        <Stack.Screen name="CollectionHistory" component={CollectionHistoryScreen} options={{ headerShown: true, title: 'My Collection History' }} />
+        <Stack.Screen name="ArchiveHistory" component={ArchiveHistoryScreen} options={{ headerShown: true, title: 'Archive History' }} />
         <Stack.Screen name="ArchiveCenter" component={ArchiveCenter} options={{ headerShown: true, title: 'Archive Reports'}} />
         <Stack.Screen name="EditProfile" component={EditProfileScreen} options={{ headerShown: true, title: 'Edit Profile' }} />
         <Stack.Screen name="LiveMapScreen" component={LiveMapScreen} options={{ headerShown: false }} />
@@ -227,8 +231,8 @@ const styles = StyleSheet.create({
     width: width * 0.8,
   },
   headerLogo: {
-    width: 40,
-    height: 35,
+    width: 60,
+    height: 60,
     marginRight: 10,
     borderRadius: 8,
   },
