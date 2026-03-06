@@ -5,7 +5,7 @@ import {
   Search, Bell, User, Truck, Users, MapPin, 
   Plus, Edit3, Trash2, Calendar, Clock, 
   RefreshCw, Wrench, Ban, X,
-  SortAsc, SortDesc, AlertCircle, Archive 
+  SortAsc, SortDesc, AlertCircle, Archive, ClipboardList, CheckCircle2, Filter
 } from 'lucide-react';
 import { design } from '../styles/design';
 
@@ -13,6 +13,7 @@ import { design } from '../styles/design';
 import { useUser } from '../context/UserContext';
 import { assignmentService } from '../services/assignmentService';
 import { vehicleService } from '../services/vehicleService';
+import { vehicleTrackingService } from '../services/vehicleTrackingService'; 
 
 // COMPONENTS
 import CreateAssignmentModal from '../components/CreateAssignmentModal';
@@ -25,6 +26,8 @@ const AssignTask = () => {
   const { user } = useUser();
   const [assignments, setAssignments] = useState([]);
   const [trucks, setTrucks] = useState([]); 
+  const [fleetWithLogs, setFleetWithLogs] = useState([]); 
+  
   const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isTruckModalOpen, setIsTruckModalOpen] = useState(false);
@@ -32,15 +35,17 @@ const AssignTask = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [sortOrder, setSortOrder] = useState('desc'); 
   const [notif, setNotif] = useState({ show: false, message: '', type: 'success' });
+
+  // DATE RANGE STATES
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
   
   const [editingAssignment, setEditingAssignment] = useState(null);
   const [editingTruck, setEditingTruck] = useState(null);
 
-  // ARCHIVE STATES FOR ASSIGNMENTS
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const [assignmentToArchive, setAssignmentToArchive] = useState(null);
 
-  // ARCHIVE STATES FOR TRUCKS
   const [isTruckConfirmOpen, setIsTruckConfirmOpen] = useState(false);
   const [truckToArchive, setTruckToArchive] = useState(null);
 
@@ -50,7 +55,6 @@ const AssignTask = () => {
 
   const { layout: l, userManagement: u } = design;
 
-  // Animation Config
   const containerVars = {
     hidden: { opacity: 0 },
     visible: { opacity: 1, transition: { staggerChildren: 0.05 } }
@@ -68,14 +72,17 @@ const AssignTask = () => {
   const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const [assigns, opts, allVehicles] = await Promise.all([
+      const [assigns, opts, allVehicles, liveFleetRes] = await Promise.all([
         assignmentService.getAssignments().catch(() => []),
         assignmentService.getOptions().catch(() => ({ drivers: [], collectors: [], vehicles: [], zones: [] })),
-        vehicleService.getAll().catch(() => [])
+        vehicleService.getAll().catch(() => []),
+        vehicleTrackingService.getLiveFleet().catch(() => ({ data: [] }))
       ]);
       
       setAssignments(Array.isArray(assigns) ? assigns : []);
       setTrucks(Array.isArray(allVehicles) ? allVehicles : []);
+      setFleetWithLogs(liveFleetRes?.data || []); 
+      
       setDataOptions({
         drivers: opts?.drivers || [],
         collectors: opts?.collectors || [],
@@ -102,18 +109,11 @@ const AssignTask = () => {
       `${a.first_name} ${a.last_name} ${a.vehicle_name} ${a.zone_name}`
       .toLowerCase().includes(searchTerm.toLowerCase())
     );
-    
-    return filtered.sort((a, b) => {
-      return sortOrder === 'asc' ? a.task_id - b.task_id : b.task_id - a.task_id;
-    });
+    return filtered.sort((a, b) => sortOrder === 'asc' ? a.task_id - b.task_id : b.task_id - a.task_id);
   }, [assignments, searchTerm, sortOrder]);
 
   const processedTrucks = useMemo(() => {
-    let filtered = trucks.filter(t => 
-      `${t.vehicle_name} ${t.plate_number} ${t.status}`
-      .toLowerCase().includes(searchTerm.toLowerCase())
-    );
-
+    let filtered = trucks.filter(t => `${t.vehicle_name} ${t.plate_number} ${t.status}`.toLowerCase().includes(searchTerm.toLowerCase()));
     const data = filtered.map(truck => {
         const assignedTeams = assignments.filter(a => Number(a.vehicle_id) === Number(truck.vehicle_id));
         return {
@@ -128,75 +128,71 @@ const AssignTask = () => {
           hasAssignment: assignedTeams.length > 0
         };
       });
-
-    return data.sort((a, b) => {
-      return sortOrder === 'asc' ? a.vehicle_id - b.vehicle_id : b.vehicle_id - a.vehicle_id;
-    });
+    return data.sort((a, b) => sortOrder === 'asc' ? a.vehicle_id - b.vehicle_id : b.vehicle_id - a.vehicle_id);
   }, [trucks, assignments, searchTerm, sortOrder]);
+
+  const allDutyLogs = useMemo(() => {
+    const logs = [];
+    const seen = new Set();
+    fleetWithLogs.forEach(truck => {
+      if (truck.history && Array.isArray(truck.history)) {
+        truck.history.forEach(log => {
+          const uniqueKey = `${truck.vehicle_id}_${log.date}_${log.start}`;
+          if (!seen.has(uniqueKey)) {
+            if (startDate && endDate) {
+                const logDate = new Date(log.date);
+                const start = new Date(startDate);
+                const end = new Date(endDate);
+                start.setHours(0,0,0,0);
+                end.setHours(23,59,59,999);
+                if (logDate < start || logDate > end) return;
+            }
+            seen.add(uniqueKey);
+            logs.push({
+              ...log,
+              vehicle_name: log.log_vehicle_name,
+              plate_number: log.log_plate_number,
+              zone_name: log.log_zone_name,
+              schedStart: log.schedStart,
+              schedEnd: log.schedEnd,
+              workDays: log.workDays || [],
+              task_id: truck.task_id
+            });
+          }
+        });
+      }
+    });
+    let filtered = logs.filter(log => `${log.driverName} ${log.vehicle_name} ${log.zone_name}`.toLowerCase().includes(searchTerm.toLowerCase()));
+    return filtered.sort((a, b) => new Date(b.date) - new Date(a.date));
+  }, [fleetWithLogs, searchTerm, startDate, endDate]);
 
   const handleSaveAssignment = async (payload) => {
     let res = editingAssignment ? await assignmentService.update(editingAssignment.task_id, payload) : await assignmentService.establish(payload);
-    if (!res.error) {
-      setIsModalOpen(false); setEditingAssignment(null); await loadData();
-      triggerNotif(editingAssignment ? "Assignment updated!" : "New team established!", "success");
-    } else triggerNotif(res.error, "error");
+    if (!res.error) { setIsModalOpen(false); setEditingAssignment(null); await loadData(); triggerNotif(editingAssignment ? "Assignment updated!" : "New team established!", "success"); } else triggerNotif(res.error, "error");
   };
 
   const handleRegisterVehicle = async (payload) => {
     let res = editingTruck ? await vehicleService.update(editingTruck.vehicle_id, payload) : await vehicleService.register(payload);
-    if (!res.error) {
-      setIsTruckModalOpen(false); setEditingTruck(null); await loadData();
-      triggerNotif(editingTruck ? "Vehicle profile updated!" : "New vehicle registered!", "success");
-    } else triggerNotif(res.error, "error");
+    if (!res.error) { setIsTruckModalOpen(false); setEditingTruck(null); await loadData(); triggerNotif(editingTruck ? "Vehicle profile updated!" : "New vehicle registered!", "success"); } else triggerNotif(res.error, "error");
   };
 
   const handleEditAssignmentClick = (row) => { setEditingAssignment(row); setIsModalOpen(true); };
   const handleEditTruckClick = (truck) => { setEditingTruck(truck); setIsTruckModalOpen(true); };
 
-  // ARCHIVE LOGIC (Assignments)
-  const triggerArchive = (id) => {
-    setAssignmentToArchive(id);
-    setIsConfirmOpen(true);
-  };
-
+  const triggerArchive = (id) => { setAssignmentToArchive(id); setIsConfirmOpen(true); };
   const handleConfirmArchive = async () => {
     try {
       const result = await assignmentService.deleteAssignment(assignmentToArchive); 
-      if (!result?.error) {
-        await loadData();
-        triggerNotif("Assignment moved to Archive Center.", "warning");
-      } else {
-        triggerNotif(result.error || "Failed to archive assignment.", "error");
-      }
-    } catch (error) {
-      triggerNotif("Connection error.", "error");
-    } finally {
-      setIsConfirmOpen(false);
-      setAssignmentToArchive(null);
-    }
+      if (!result?.error) { await loadData(); triggerNotif("Assignment moved to Archive Center.", "warning"); } else { triggerNotif(result.error || "Failed to archive assignment.", "error"); }
+    } catch (error) { triggerNotif("Connection error.", "error"); } finally { setIsConfirmOpen(false); setAssignmentToArchive(null); }
   };
 
-  // ARCHIVE LOGIC (Trucks)
-  const triggerTruckArchive = (id) => {
-    setTruckToArchive(id);
-    setIsTruckConfirmOpen(true);
-  };
-
+  const triggerTruckArchive = (id) => { setTruckToArchive(id); setIsTruckConfirmOpen(true); };
   const handleConfirmTruckArchive = async () => {
     try {
       const result = await vehicleService.deleteVehicle(truckToArchive); 
-      if (!result?.error) {
-        await loadData();
-        triggerNotif("Vehicle moved to Archive Center.", "warning");
-      } else {
-        triggerNotif(result.error || "Failed to archive vehicle.", "error");
-      }
-    } catch (error) {
-      triggerNotif("Connection error.", "error");
-    } finally {
-      setIsTruckConfirmOpen(false);
-      setTruckToArchive(null);
-    }
+      if (!result?.error) { await loadData(); triggerNotif("Vehicle moved to Archive Center.", "warning"); } else { triggerNotif(result.error || "Failed to archive vehicle.", "error"); }
+    } catch (error) { triggerNotif("Connection error.", "error"); } finally { setIsTruckConfirmOpen(false); setTruckToArchive(null); }
   };
 
   const kpiCards = [
@@ -208,83 +204,31 @@ const AssignTask = () => {
 
   if (!user) return null;
 
-  if (isLoading && assignments.length === 0 && trucks.length === 0) {
-    return (
-      <div className="h-full w-full flex items-center justify-center bg-[#f0fdf4]">
-        <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: "linear" }}>
-          <RefreshCw className="text-emerald-600" size={40} />
-        </motion.div>
-      </div>
-    );
-  }
-
   return (
     <motion.div initial="hidden" animate="visible" variants={containerVars} className="h-full bg-[#f0fdf4] overflow-y-auto relative font-sans text-slate-700">
       
-      {/* HEADER */}
       <header className={l.header}>
-        <div className="relative w-full max-w-2xl group flex items-center gap-3"> 
+        <div className="relative w-full max-w-4xl group flex items-center gap-3"> 
           <div className="relative flex-1">
             <Search className="absolute left-3 top-2.5 text-gray-500" size={18} />
-            <input 
-              type="text" 
-              placeholder={`Search logistics...`} 
-              className={l.searchBox} 
-              value={searchTerm} 
-              onChange={(e) => setSearchTerm(e.target.value)} 
-            />
-            {searchTerm && (
-              <button onClick={() => setSearchTerm('')} className="absolute right-3 top-2.5 text-gray-400 hover:text-red-500 cursor-pointer">
-                <X size={18} />
-              </button>
-            )}
+            <input type="text" placeholder={`Search logistics...`} className={l.searchBox} value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+            {searchTerm && <button onClick={() => setSearchTerm('')} className="absolute right-3 top-2.5 text-gray-400 hover:text-red-500 cursor-pointer"><X size={18} /></button>}
           </div>
-
-          <motion.button 
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={() => setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
-            className="p-2.5 rounded-xl text-slate-500 hover:text-emerald-600 transition-all bg-white border border-slate-100 shadow-sm flex items-center gap-2 text-xs font-bold"
-          >
-            {sortOrder === 'asc' ? <SortAsc size={18} /> : <SortDesc size={18} />}
-            <span className="hidden sm:inline uppercase">{sortOrder}</span>
+          <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')} className="p-2.5 rounded-xl text-slate-500 hover:text-emerald-600 transition-all bg-white border border-slate-100 shadow-sm flex items-center gap-2 text-xs font-bold">
+            {sortOrder === 'asc' ? <SortAsc size={18} /> : <SortDesc size={18} />}<span className="hidden sm:inline uppercase">{sortOrder}</span>
           </motion.button>
-
-          <motion.button whileTap={{ scale: 0.9 }} onClick={loadData} className="p-2.5 rounded-xl text-slate-400 hover:text-emerald-600 transition-all bg-white border border-slate-100 shadow-sm">
-            <RefreshCw size={18} className={isLoading ? 'animate-spin' : ''} />
-          </motion.button>
+          <motion.button whileTap={{ scale: 0.9 }} onClick={loadData} className="p-2.5 rounded-xl text-slate-400 hover:text-emerald-600 transition-all bg-white border border-slate-100 shadow-sm"><RefreshCw size={18} className={isLoading ? 'animate-spin' : ''} /></motion.button>
         </div>
 
         <div className="flex items-center gap-6">
           <button className="relative text-gray-600 hover:text-green-700"><Bell size={24} /></button>
-          
           <div className="flex items-center gap-3 pl-6 border-l border-gray-300">
-            <div 
-              className="text-right hidden md:block cursor-pointer hover:opacity-70 transition-opacity"
-              onClick={() => navigate("/profile-settings")}
-            >
-              <p className="text-sm font-bold text-gray-800 leading-tight">
-                {user.first_name} {user.last_name}
-              </p>
+            <div className="text-right hidden md:block cursor-pointer hover:opacity-70 transition-opacity" onClick={() => navigate("/profile-settings")}>
+              <p className="text-sm font-bold text-gray-800 leading-tight">{user.first_name} {user.last_name}</p>
               <p className="text-[10px] font-bold text-green-600 uppercase tracking-wider">{user.role}</p>
             </div>
-            
-            <div 
-              className={`${l.profileCircle} cursor-pointer hover:ring-4 hover:ring-green-100 transition-all overflow-hidden border border-gray-100`}
-              onClick={() => navigate("/profile-settings")}
-            >
-                {user.profile_picture ? (
-                  <img 
-                    src={`http://localhost:5000${user.profile_picture}`} 
-                    alt="profile" 
-                    className="w-full h-full object-cover" 
-                  />
-                ) : (
-                  <img 
-                    src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${user.first_name}`} 
-                    alt="profile" 
-                  />
-                )}
+            <div className={`${l.profileCircle} cursor-pointer hover:ring-4 hover:ring-green-100 transition-all overflow-hidden border border-gray-100`} onClick={() => navigate("/profile-settings")}>
+                {user.profile_picture ? <img src={`http://localhost:5000${user.profile_picture}`} alt="profile" className="w-full h-full object-cover" /> : <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${user.first_name}`} alt="profile" />}
             </div>
           </div>
         </div>
@@ -297,16 +241,11 @@ const AssignTask = () => {
             <h2 className="text-3xl font-bold text-[#1B5E20]">Logistics Control</h2>
             <p className="text-gray-600 text-sm mt-1">Monitor personnel deployment and vehicle fleet</p>
           </div>
-
-          <button 
-            onClick={() => navigate("/archive-center")}
-            className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-400 hover:text-emerald-600 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-sm"
-          >
+          <button onClick={() => navigate("/archive-center")} className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-400 hover:text-emerald-600 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-sm">
             <Archive size={14} /> View Archives
           </button>
         </motion.div>
 
-        {/* KPI Grid */}
         <motion.div variants={containerVars} className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
           {kpiCards.map((stat, i) => (
             <motion.div key={i} variants={itemVars} whileHover={{ y: -5 }} className="bg-white p-5 rounded-lg shadow-sm border-l-4 border-green-600 flex items-start gap-4 transition-all group">
@@ -321,23 +260,60 @@ const AssignTask = () => {
         </motion.div>
 
         <motion.div variants={itemVars} className="bg-white rounded-xl shadow-sm border border-gray-100 border-t-[6px] border-t-[#2B9447] overflow-hidden min-h-[500px] flex flex-col">
-          <div className={u.tableControls}>
-            <div className="flex bg-gray-100 p-1 rounded-lg relative w-64">
-                <div className={`absolute top-1 bottom-1 left-1 w-[calc(50%-4px)] bg-white rounded-md shadow-sm transition-transform duration-300 ${activeTab === 'trucks' ? 'translate-x-full' : 'translate-x-0'}`} />
+          
+          {/* 🔥 UPDATED TABLE CONTROLS: Tabs on Left, Actions (Calendar/Buttons) on Right */}
+          <div className="flex items-center justify-between p-4 bg-white border-b border-slate-50">
+            {/* Left Side: Tabs */}
+            <div className="flex bg-gray-100 p-1 rounded-lg relative w-96">
+                <div className={`absolute top-1 bottom-1 left-1 w-[calc(33.33%-4px)] bg-white rounded-md shadow-sm transition-transform duration-300 ${activeTab === 'trucks' ? 'translate-x-full' : activeTab === 'logs' ? 'translate-x-[200%]' : 'translate-x-0'}`} />
                 <button onClick={() => setActiveTab('assign')} className={`relative z-10 flex-1 px-4 py-2 text-xs font-bold ${activeTab === 'assign' ? 'text-green-800' : 'text-gray-500'}`}>Assign Task</button>
                 <button onClick={() => setActiveTab('trucks')} className={`relative z-10 flex-1 px-4 py-2 text-xs font-bold ${activeTab === 'trucks' ? 'text-green-800' : 'text-gray-500'}`}>View Trucks</button>
+                <button onClick={() => setActiveTab('logs')} className={`relative z-10 flex-1 px-4 py-2 text-xs font-bold ${activeTab === 'logs' ? 'text-green-800' : 'text-gray-500'}`}>Duty Logs</button>
             </div>
-            <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => { setEditingAssignment(null); setEditingTruck(null); activeTab === 'assign' ? setIsModalOpen(true) : setIsTruckModalOpen(true) }} className="bg-[#98EE99] hover:bg-[#86d987] text-gray-800 px-5 py-2.5 rounded-lg text-xs font-bold flex items-center gap-2 shadow-sm border border-green-200 transition-all">
-                <Plus size={16} className="bg-green-800 text-white rounded-full p-0.5" /> 
-                {activeTab === 'assign' ? 'Assign Driver & Collector' : 'Register Vehicle'}
-            </motion.button>
+
+            {/* Right Side: Calendar or Buttons */}
+            <div className="flex items-center gap-3">
+              <AnimatePresence mode="wait">
+                {activeTab === 'logs' ? (
+                  <motion.div 
+                    key="log-filters"
+                    initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} 
+                    className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2 shadow-inner"
+                  >
+                    <Calendar size={14} className="text-emerald-600 mr-1" />
+                    <div className="flex items-center gap-2">
+                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">Period:</span>
+                        <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="text-[11px] font-black text-slate-700 outline-none bg-transparent cursor-pointer" />
+                        <span className="text-slate-300">—</span>
+                        <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="text-[11px] font-black text-slate-700 outline-none bg-transparent cursor-pointer" />
+                    </div>
+                    {(startDate || endDate) && (
+                        <button onClick={() => { setStartDate(''); setEndDate(''); }} className="ml-2 w-6 h-6 flex items-center justify-center rounded-full bg-white text-slate-400 hover:text-rose-500 border border-slate-100 transition-all">
+                            <X size={12} />
+                        </button>
+                    )}
+                  </motion.div>
+                ) : (
+                  <motion.button 
+                    key="action-btn"
+                    initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}
+                    whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} 
+                    onClick={() => { setEditingAssignment(null); setEditingTruck(null); activeTab === 'assign' ? setIsModalOpen(true) : setIsTruckModalOpen(true) }} 
+                    className="bg-[#98EE99] hover:bg-[#86d987] text-gray-800 px-5 py-2.5 rounded-lg text-xs font-bold flex items-center gap-2 shadow-sm border border-green-200 transition-all"
+                  >
+                    <Plus size={16} className="bg-green-800 text-white rounded-full p-0.5" /> 
+                    {activeTab === 'assign' ? 'Assign Driver & Collector' : 'Register Vehicle'}
+                  </motion.button>
+                )}
+              </AnimatePresence>
+            </div>
           </div>
 
           <div className="flex-1 relative overflow-hidden px-4 pb-4">
             <AnimatePresence mode="wait">
               {activeTab === 'assign' ? (
                 <motion.div key="assign-tab" initial={{ x: -20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: 20, opacity: 0 }} className="h-full">
-                   <div className="overflow-x-auto rounded-2xl border border-slate-100 bg-white">
+                    <div className="overflow-x-auto rounded-2xl border border-slate-100 bg-white">
                       <table className="w-full text-left border-separate border-spacing-0">
                         <thead>
                           <tr className="bg-slate-50/80">
@@ -370,38 +346,22 @@ const AssignTask = () => {
                                   ))}
                                 </div>
                               </td>
-
-                              {/* UPDATED TRUCK VEHICLE CELL (ARCHIVE STRIKE-THROUGH LOGIC) */}
                               <td className="px-6 py-6 align-top">
                                 <div className="flex flex-col gap-1.5">
                                   <div className="flex items-center gap-2 text-[12px] font-bold text-slate-700">
                                     <Truck size={14} className={row.truck_archived ? "text-rose-400" : "text-slate-300"} /> 
-                                    
-                                    {/* STRIKETHROUGH TEXT IF ARCHIVED */}
-                                    <span className={row.truck_archived ? "text-slate-400 line-through decoration-rose-400" : ""}>
-                                      {row.vehicle_name}
-                                    </span>
-
-                                    {/* SHOW ARCHIVED BADGE */}
+                                    <span className={row.truck_archived ? "text-slate-400 line-through decoration-rose-400" : ""}>{row.vehicle_name}</span>
                                     {row.truck_archived ? (
-                                      <span className="bg-rose-100 text-rose-700 border-rose-200 text-[8px] px-2 py-0.5 rounded-full font-black uppercase tracking-tighter border shadow-sm flex items-center gap-1">
-                                        <Ban size={10} /> Archived
-                                      </span>
+                                      <span className="bg-rose-100 text-rose-700 border-rose-200 text-[8px] px-2 py-0.5 rounded-full font-black uppercase tracking-tighter border shadow-sm flex items-center gap-1"><Ban size={10} /> Archived</span>
                                     ) : (
-                                      /* Standard Truck Status Badge */
                                       row.truck_status && row.truck_status !== 'Active' && (
-                                        <span className={`text-[8px] px-2 py-0.5 rounded-full font-black uppercase tracking-tighter border shadow-sm ${row.truck_status === 'Maintenance' ? 'bg-amber-100 text-amber-700 border-amber-200' : 'bg-rose-100 text-rose-700 border-rose-200'}`}>
-                                          {row.truck_status}
-                                        </span>
+                                        <span className={`text-[8px] font-black uppercase tracking-tighter border shadow-sm ${row.truck_status === 'Maintenance' ? 'bg-amber-100 text-amber-700 border-amber-200' : 'bg-rose-100 text-rose-700 border-rose-200'}`}>{row.truck_status}</span>
                                       )
                                     )}
                                   </div>
-                                  <span className={`text-[10px] font-bold pl-5 tracking-widest uppercase w-fit px-1.5 rounded ${row.truck_archived ? 'text-rose-400 bg-rose-50' : 'text-slate-400 bg-slate-50'}`}>
-                                    {row.plate_number || '---'}
-                                  </span>
+                                  <span className={`text-[10px] font-bold pl-5 tracking-widest uppercase w-fit px-1.5 rounded ${row.truck_archived ? 'text-rose-400 bg-rose-50' : 'text-slate-400 bg-slate-50'}`}>{row.plate_number || '---'}</span>
                                 </div>
                               </td>
-
                               <td className="px-6 py-6 align-top">
                                 <div className="flex items-center gap-2 text-[11px] font-bold text-slate-600 bg-emerald-50/50 border border-emerald-100 px-3 py-1.5 rounded-xl w-fit"><MapPin size={14} className="text-emerald-500" /> {row.zone_name}</div>
                               </td>
@@ -426,17 +386,17 @@ const AssignTask = () => {
                               </td>
                               <td className="px-6 py-6 text-right align-top">
                                 <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                  <button onClick={() => handleEditAssignmentClick(row)} className="p-2 text-slate-400 hover:text-emerald-600 transition-all bg-white rounded-lg border border-slate-100 shadow-sm"><Edit3 size={16} /></button>
-                                  <button onClick={() => triggerArchive(row.task_id)} className="p-2 text-slate-400 hover:text-rose-500 transition-all bg-white rounded-lg border border-slate-100 shadow-sm"><Archive size={16} /></button>
+                                  <button onClick={() => handleEditAssignmentClick(row)} className="p-2 text-slate-400 hover:text-emerald-600 transition-all bg-white rounded-lg border border-slate-100 shadow-sm" title="Edit Assignment"><Edit3 size={16} /></button>
+                                  <button onClick={() => triggerArchive(row.task_id)} className="p-2 text-slate-400 hover:text-rose-500 transition-all bg-white rounded-lg border border-slate-100 shadow-sm" title="Archive Assignment"><Archive size={16} /></button>
                                 </div>
                               </td>
                             </motion.tr>
                           ))}
                         </tbody>
                       </table>
-                   </div>
+                    </div>
                 </motion.div>
-              ) : (
+              ) : activeTab === 'trucks' ? (
                 <motion.div key="trucks-tab" initial={{ x: 20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -20, opacity: 0 }} className="h-full">
                   <div className="overflow-x-auto rounded-2xl border border-slate-100 bg-white shadow-sm">
                     <table className="w-full text-left border-separate border-spacing-0 table-fixed">
@@ -492,9 +452,7 @@ const AssignTask = () => {
                                 truck.status === 'Maintenance' ? 'bg-amber-100 text-amber-700 border-amber-200' : 
                                 truck.status === 'Inactive' ? 'bg-rose-100 text-rose-700 border-rose-200' :
                                 truck.hasAssignment ? 'bg-blue-50 text-blue-700 border-blue-100' : 'bg-slate-50 text-slate-400 border-slate-100'
-                              }`}>
-                                  {truck.status !== 'Active' ? truck.status : (truck.hasAssignment ? 'On Deployment' : 'Standby')}
-                              </span>
+                              }`}>{truck.status !== 'Active' ? truck.status : (truck.hasAssignment ? 'On Deployment' : 'Standby')}</span>
                             </td>
                             <td className="px-6 py-8 text-right align-top">
                               <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-all">
@@ -508,6 +466,85 @@ const AssignTask = () => {
                     </table>
                   </div>
                 </motion.div>
+              ) : (
+                <motion.div key="logs-tab" initial={{ x: 20, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -20, opacity: 0 }} className="h-full">
+                   <div className="overflow-x-auto rounded-2xl border border-slate-100 bg-white shadow-sm">
+                    <table className="w-full text-left border-separate border-spacing-0">
+                      <thead>
+                        <tr className="bg-slate-50/80">
+                          <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-100">Date Logged</th>
+                          <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-100">Personnel & Team</th>
+                          <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-100">Duty Timeline</th>
+                          <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-100">Zone</th>
+                          <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-100">Fleet Asset</th>
+                          <th className="px-6 py-4 text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-100">Performance</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-50">
+                        {allDutyLogs.length > 0 ? allDutyLogs.map((log, idx) => (
+                          <motion.tr key={idx} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: idx * 0.01 }} className="group hover:bg-slate-50/40 transition-all duration-200">
+                             <td className="px-6 py-6 align-top">
+                               <div className="flex items-center gap-3 text-[#1B5E20]">
+                                  <Calendar size={16} className="bg-emerald-50 p-0.5 rounded" />
+                                  <span className="text-[13px] font-black">{log.date}</span>
+                               </div>
+                             </td>
+                             <td className="px-6 py-6 align-top">
+                               <div className="space-y-2">
+                                  <div className="flex items-center gap-2">
+                                     <span className="text-[10px] bg-emerald-600 text-white px-2 py-0.5 rounded font-black uppercase tracking-tighter">Driver</span>
+                                     <span className="text-[13px] font-black text-slate-800">{log.driverName}</span>
+                                  </div>
+                                  <div className="flex flex-wrap gap-1.5 pl-11">
+                                     {log.collectors?.map((name, i) => (
+                                       <span key={i} className="text-[10px] font-bold text-slate-400 bg-slate-50 px-2 py-0.5 rounded border border-slate-100">{name}</span>
+                                     ))}
+                                  </div>
+                               </div>
+                             </td>
+                             <td className="px-6 py-6 align-top">
+                               <div className="space-y-2">
+                                  <div className="flex items-center gap-2 text-[11px] font-black text-slate-700"><Clock size={12} className="text-blue-500" /> {log.start} — {log.end}</div>
+                                  <div className="flex items-center gap-2 text-[9px] font-bold text-slate-400 uppercase tracking-widest pl-5">Sched: {log.schedStart} - {log.schedEnd}</div>
+                                  <div className="flex -space-x-1 pl-5 pt-1">
+                                      {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day, i) => {
+                                        const isActive = Array.isArray(log.workDays) && log.workDays.includes(day);
+                                        return (
+                                          <div key={i} className={`w-5 h-5 rounded-full border-2 border-white flex items-center justify-center text-[8px] font-black shadow-sm transition-all ${isActive ? 'bg-emerald-500 text-white z-10 scale-110' : 'bg-slate-100 text-slate-300'}`}>{day.charAt(0)}</div>
+                                        );
+                                      })}
+                                  </div>
+                               </div>
+                             </td>
+                             <td className="px-6 py-6 align-top">
+                               <div className="flex items-center gap-2 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-100 w-fit"><MapPin size={12} /> {log.zone_name}</div>
+                             </td>
+                             <td className="px-6 py-6 align-top">
+                               <div className="flex flex-col">
+                                  <span className="text-[11px] font-black text-slate-700 uppercase">{log.vehicle_name}</span>
+                                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">{log.plate_number}</span>
+                               </div>
+                             </td>
+                             <td className="px-6 py-6 align-top">
+                                <div className="flex gap-4">
+                                   <div className="flex flex-col">
+                                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter mb-0.5">Bins</span>
+                                      <span className="text-[12px] font-black text-emerald-600 flex items-center gap-1"><Trash2 size={10}/> {log.bins}</span>
+                                   </div>
+                                   <div className="flex flex-col">
+                                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter mb-0.5">Reports</span>
+                                      <span className="text-[12px] font-black text-blue-600 flex items-center gap-1"><CheckCircle2 size={10}/> {log.reports}</span>
+                                   </div>
+                                </div>
+                             </td>
+                          </motion.tr>
+                        )) : (
+                          <tr><td colSpan="6" className="px-6 py-20 text-center text-slate-400 italic">No historical duty logs found in the system.</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                   </div>
+                </motion.div>
               )}
             </AnimatePresence>
           </div>
@@ -516,29 +553,8 @@ const AssignTask = () => {
 
       <CreateAssignmentModal isOpen={isModalOpen} onClose={() => { setIsModalOpen(false); setEditingAssignment(null); }} onCreate={handleSaveAssignment} dataOptions={dataOptions} editingData={editingAssignment} />
       <RegisterTruckModal isOpen={isTruckModalOpen} onClose={() => { setIsTruckModalOpen(false); setEditingTruck(null); }} onCreate={handleRegisterVehicle} editingData={editingTruck} />
-      
-      {/* CONFIRM DIALOG FOR ASSIGNMENTS */}
-      <ConfirmDialog 
-        isOpen={isConfirmOpen}
-        onClose={() => setIsConfirmOpen(false)}
-        onConfirm={handleConfirmArchive}
-        title="Archive Assignment?"
-        message="This operational team assignment will be removed from the active schedule and moved to the system archives."
-        confirmText="Archive Now"
-        type="warning"
-      />
-
-      {/* CONFIRM DIALOG FOR TRUCKS */}
-      <ConfirmDialog 
-        isOpen={isTruckConfirmOpen}
-        onClose={() => setIsTruckConfirmOpen(false)}
-        onConfirm={handleConfirmTruckArchive}
-        title="Archive Fleet Asset?"
-        message="This vehicle will be removed from the active fleet and moved to the system archives."
-        confirmText="Archive Now"
-        type="warning"
-      />
-
+      <ConfirmDialog isOpen={isConfirmOpen} onClose={() => setIsConfirmOpen(false)} onConfirm={handleConfirmArchive} title="Archive Assignment?" message="This operational team assignment will be removed from the active schedule and moved to the system archives." confirmText="Archive Now" type="warning" />
+      <ConfirmDialog isOpen={isTruckConfirmOpen} onClose={() => setIsTruckConfirmOpen(false)} onConfirm={handleConfirmTruckArchive} title="Archive Fleet Asset?" message="This vehicle will be removed from the active fleet and moved to the system archives." confirmText="Archive Now" type="warning" />
       <Notification show={notif.show} message={notif.message} type={notif.type} onClose={() => setNotif({ ...notif, show: false })} />
     </motion.div>
   );
