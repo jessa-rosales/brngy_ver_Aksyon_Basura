@@ -1,10 +1,11 @@
 import React, { useMemo, useRef, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Dimensions, Platform, StatusBar, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Dimensions, Platform, StatusBar, Alert, Image } from 'react-native';
 import MapboxGL from '@rnmapbox/maps';
-// ✅ ADDED 'Clock' to imports for the In Progress icon
 import { Truck, Bell, ChevronLeft, MapPin, Navigation, CheckCircle2, Trash2, AlertTriangle, Map as MapIcon, Clock } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+// ✅ ADDED: Import mobileService to fetch live moving coordinates
+import { mobileService } from '../services/mobileService'; 
 
 MapboxGL.setAccessToken('pk.eyJ1IjoiamVnby1ybyIsImEiOiJjbWx6dnZ6YmQwOW12NGtxd25vMmJldGZhIn0.uCCN-70t1ZZugt6h1ZoMOg');
 
@@ -19,30 +20,26 @@ const RenderBinMarker = ({ status }) => (
   </View>
 );
 
-// ✅ UPDATED: Now receives 'status' instead of 'isCompleted'
 const RenderReportMarker = ({ status, isFocused }) => {
-  // ✅ 3-WAY DYNAMIC COLORS: Green (Resolved), Orange (In Progress), Red (Pending)
-  let markerColor = '#EF4444'; // Red default
+  let markerColor = '#EF4444'; 
   let ringColor = 'rgba(239, 68, 68, 0.4)';
   
   if (status === 'Resolved' || status === 'Collected') {
-    markerColor = '#10B981'; // Green
+    markerColor = '#10B981'; 
     ringColor = 'rgba(16, 185, 129, 0.4)';
   } else if (status === 'In Progress') {
-    markerColor = '#F59E0B'; // Orange
+    markerColor = '#F59E0B'; 
     ringColor = 'rgba(245, 158, 11, 0.4)';
   }
 
   return (
     <View style={styles.reportMarkerContainer}>
-      {/* Visual pulse ring if this is the focused report */}
       {isFocused && <View style={[styles.focusedRing, { backgroundColor: ringColor, borderColor: markerColor }]} />}
       <View style={[
         styles.reportCore, 
-        { backgroundColor: markerColor }, // Applies dynamic color to all markers
+        { backgroundColor: markerColor }, 
         isFocused && { borderColor: 'white', borderWidth: 3, width: 24, height: 24, borderRadius: 12 }
       ]}>
-        {/* Dynamic Icon based on status */}
         {status === 'Resolved' || status === 'Collected' ? (
           <CheckCircle2 size={12} color="white" />
         ) : status === 'In Progress' ? (
@@ -61,31 +58,56 @@ const RenderReportMarker = ({ status, isFocused }) => {
 
 const LiveMapScreen = ({ navigation, route }) => {
   const insets = useSafeAreaInsets();
-  
-  // Ref to control the Mapbox Camera
   const cameraRef = useRef(null);
 
   const zoneData = route.params?.zoneData || {};
   const allZonesData = route.params?.allZonesData || []; 
   const isAllZones = zoneData.zone_id === 'all';
   
-  // Read the navigation parameters sent from FeedScreen
   const targetLocation = route.params?.focusLocation;
   const targetReportId = route.params?.reportId;
   const targetReport = route.params?.targetReport;
 
   const bins = isAllZones ? allZonesData.flatMap(z => z.bins || []) : (zoneData.bins || []);
   const reports = isAllZones ? allZonesData.flatMap(z => z.reports || []) : (zoneData.reports || []);
+
+  // ✅ ADDED: State to hold the live moving coordinates of the truck
+  const [liveTruckCoords, setLiveTruckCoords] = useState(
+    (zoneData.truck_lng && zoneData.truck_lat) 
+      ? [Number(zoneData.truck_lng), Number(zoneData.truck_lat)] 
+      : null
+  );
+
+  // ✅ ADDED: Background interval to fetch the moving truck every 5 seconds
+  useEffect(() => {
+    if (isAllZones || !zoneData.zone_id) return;
+
+    const fetchLiveLocation = async () => {
+      try {
+        const result = await mobileService.getZoneTrackingData();
+        if (result && result.success) {
+          const currentZoneInfo = result.data.find(z => z.zone_id === zoneData.zone_id);
+          if (currentZoneInfo && currentZoneInfo.truck_lat && currentZoneInfo.truck_lng) {
+            setLiveTruckCoords([Number(currentZoneInfo.truck_lng), Number(currentZoneInfo.truck_lat)]);
+          }
+        }
+      } catch (error) {
+        console.log("Map Polling Error:", error);
+      }
+    };
+
+    const interval = setInterval(fetchLiveLocation, 5000); // Updates map every 5 seconds
+    return () => clearInterval(interval);
+  }, [isAllZones, zoneData.zone_id]);
   
-  // Effect to trigger zoom animation if focusLocation exists
   useEffect(() => {
     if (targetLocation && cameraRef.current) {
       setTimeout(() => {
         cameraRef.current.setCamera({
           centerCoordinate: [Number(targetLocation.longitude), Number(targetLocation.latitude)],
-          zoomLevel: 18, // High zoom to see the specific report
-          animationDuration: 2000, // Smooth 2-second fly-to animation
-          pitch: 45, // Add a little 3D tilt for a cooler effect
+          zoomLevel: 18, 
+          animationDuration: 2000, 
+          pitch: 45, 
         });
       }, 500);
     }
@@ -142,10 +164,11 @@ const LiveMapScreen = ({ navigation, route }) => {
     return { type: 'FeatureCollection', features };
   }, [allZonesData]);
 
+  // ✅ UPDATED: Use liveTruckCoords for initial center if available
   const initialCameraCoords = targetLocation 
     ? [Number(targetLocation.longitude), Number(targetLocation.latitude)]
-    : (zoneData.truck_lng && zoneData.truck_lat && !isAllZones)
-        ? [Number(zoneData.truck_lng), Number(zoneData.truck_lat)] 
+    : (liveTruckCoords && !isAllZones)
+        ? liveTruckCoords 
         : [124.6459, 8.4772];
     
   const zoomLvl = targetLocation ? 18 : (isAllZones ? 13 : 15.5);
@@ -207,15 +230,21 @@ const LiveMapScreen = ({ navigation, route }) => {
             </MapboxGL.ShapeSource>
           )}
 
-          {!isAllZones && zoneData.truck_lat && (
-            <MapboxGL.PointAnnotation id="truck-marker" coordinate={initialCameraCoords}>
-              <View style={styles.truckMarker}>
-                <LinearGradient colors={['#3B82F6', '#2563EB']} style={styles.markerGradient}>
-                  <Truck color="white" size={20} />
-                </LinearGradient>
-                <View style={styles.markerArrow} />
+          {/* ✅ UPDATED: Uses 'liveTruckCoords' so it drives live on the map */}
+          {!isAllZones && liveTruckCoords && (
+            <MapboxGL.MarkerView 
+              id="truck-marker" 
+              coordinate={liveTruckCoords}
+            >
+              <View style={styles.customTruckPuck}>
+                <Image 
+                  source={require('../../assets/truck.png')} 
+                  style={styles.truckIconImage} 
+                  resizeMode="contain"
+                  fadeDuration={0} 
+                />
               </View>
-            </MapboxGL.PointAnnotation>
+            </MapboxGL.MarkerView>
           )}
 
           {bins.map((bin, index) => {
@@ -242,20 +271,17 @@ const LiveMapScreen = ({ navigation, route }) => {
                 coordinate={[Number(report.lng), Number(report.lat)]}
                 style={{ zIndex: isFocused ? 1000 : 1 }}
               >
-                {/* ✅ UPDATED: Passing actual status down to the component */}
                 <RenderReportMarker status={report.status} isFocused={isFocused} />
               </MapboxGL.PointAnnotation>
             );
           })}
 
-          {/* ✅ If coming from FeedScreen, force render the marker using the exact targetLocation */}
           {targetLocation && (
             <MapboxGL.PointAnnotation 
               id="focused-target-marker" 
               coordinate={[Number(targetLocation.longitude), Number(targetLocation.latitude)]}
               style={{ zIndex: 1000 }}
             >
-              {/* ✅ UPDATED: Passing targetReport status */}
               <RenderReportMarker 
                 status={targetReport ? targetReport.status : 'Pending'} 
                 isFocused={true} 
@@ -293,7 +319,6 @@ const LiveMapScreen = ({ navigation, route }) => {
               </Text>
             </View>
             
-            {/* DYNAMIC RIGHT BADGE: Shows "Resolved", "In Progress", or "Pending" */}
             {targetReport ? (
               <View style={styles.etaContainer}>
                 {targetReport.status === 'Resolved' ? (
@@ -365,9 +390,28 @@ const styles = StyleSheet.create({
   headerTag: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.9)', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, elevation: 4 },
   liveDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#EF4444', marginRight: 6 },
   headerText: { fontSize: 12, fontWeight: '800', color: '#1e293b', letterSpacing: 0.5 },
-  truckMarker: { alignItems: 'center', justifyContent: 'center' },
-  markerGradient: { padding: 10, borderRadius: 25, borderWidth: 3, borderColor: 'white', elevation: 5 },
-  markerArrow: { width: 0, height: 0, backgroundColor: 'transparent', borderStyle: 'solid', borderLeftWidth: 6, borderRightWidth: 6, borderBottomWidth: 10, borderLeftColor: 'transparent', borderRightColor: 'transparent', borderBottomColor: '#2563EB', transform: [{ rotate: '180deg' }], marginTop: -2 },
+  
+  // ✅ ADDED: Professional Puck Styles for the Truck Marker
+  customTruckPuck: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: 'white',
+    borderWidth: 2.5,
+    borderColor: '#3B82F6', 
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+  },
+  truckIconImage: {
+    width: 28,
+    height: 28,
+  },
+
   emeraldMarkerContainer: { alignItems: 'center', justifyContent: 'center', width: 30, height: 30 },
   emeraldCore: { width: 20, height: 20, borderRadius: 10, backgroundColor: '#10B981', borderWidth: 2, borderColor: 'white', alignItems: 'center', justifyContent: 'center', elevation: 3, zIndex: 2 },
   emeraldTip: { width: 8, height: 8, backgroundColor: '#10B981', borderBottomWidth: 2, borderRightWidth: 2, borderColor: 'white', transform: [{ rotate: '45deg' }], marginTop: -4, zIndex: 1 },
