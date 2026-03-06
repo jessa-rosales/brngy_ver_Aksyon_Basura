@@ -65,6 +65,7 @@ const getMobileAssignment = async (req, res) => {
 };
 
 // ✅ NEW: Start Duty Session
+// ✅ UPDATED: Start Duty Session (With Data Snapshotting)
 const startDuty = async (req, res) => {
     const { userId, vehicleId } = req.body;
     try {
@@ -73,11 +74,48 @@ const startDuty = async (req, res) => {
         // 1. Mark user as On Duty
         await pool.query('UPDATE users SET is_on_duty = true WHERE user_id = $1', [userId]);
         
-        // 2. Create a new log entry
+        // 2. 🔥 FETCH CURRENT TASK FOR SNAPSHOT
+        const taskQuery = await pool.query(`
+            SELECT task_id, zone_id, start_time, end_time, work_days 
+            FROM task_assignments 
+            WHERE driver_id = $1 AND vehicle_id = $2 AND status IN ('Active', 'In Progress')
+            ORDER BY task_id DESC LIMIT 1
+        `, [userId, vehicleId]);
+
+        const currentTask = taskQuery.rows[0];
+        let collectorsSnapshot = null;
+        let workDaysSnapshot = null;
+
+        if (currentTask) {
+            // Fetch the names of the collectors currently assigned to this task
+            const collectorsQuery = await pool.query(`
+                SELECT u.first_name, u.last_name 
+                FROM task_collectors tc
+                JOIN users u ON tc.collector_id = u.user_id
+                WHERE tc.task_id = $1
+            `, [currentTask.task_id]);
+
+            const collectorNames = collectorsQuery.rows.map(c => `${c.first_name} ${c.last_name}`);
+            collectorsSnapshot = JSON.stringify(collectorNames);
+            workDaysSnapshot = JSON.stringify(currentTask.work_days);
+        }
+
+        // 3. Create a new log entry WITH SNAPSHOTS (Freezes data in time)
         const logResult = await pool.query(
-            `INSERT INTO duty_logs (user_id, vehicle_id, status) 
-             VALUES ($1, $2, 'Active') RETURNING log_id`,
-            [userId, vehicleId]
+            `INSERT INTO duty_logs (
+                user_id, vehicle_id, status, 
+                zone_id, sched_start, sched_end, collectors_snapshot, work_days_snapshot
+            ) 
+             VALUES ($1, $2, 'Active', $3, $4, $5, $6, $7) RETURNING log_id`,
+            [
+                userId, 
+                vehicleId,
+                currentTask ? currentTask.zone_id : null,
+                currentTask ? currentTask.start_time : null,
+                currentTask ? currentTask.end_time : null,
+                collectorsSnapshot,
+                workDaysSnapshot
+            ]
         );
 
         await pool.query('COMMIT');
