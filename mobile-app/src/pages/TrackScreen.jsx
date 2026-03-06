@@ -314,7 +314,6 @@ const TrackScreen = ({ navigation }) => {
                                             ]}
                                             onPress={() => {
                                                 if (!item.has_photo) {
-                                                    //  CustomAlert instead of Alert.alert
                                                     setCustomAlert({
                                                       visible: true,
                                                       title: "No Photo Available",
@@ -329,7 +328,6 @@ const TrackScreen = ({ navigation }) => {
                                                 if (url && typeof url === 'string') {
                                                     setEvidencePhoto(mobileService.getImageUrl(url));
                                                 } else {
-                                                    //  Using CustomAlert instead of Alert.alert
                                                     setCustomAlert({
                                                       visible: true,
                                                       title: "Missing URL",
@@ -359,6 +357,15 @@ const TrackScreen = ({ navigation }) => {
         )}
       </ScrollView>
 
+      {/* --- QUICK REPORT FLOATING BUTTON --- */}
+      <TouchableOpacity 
+        style={styles.quickReportFab} 
+        activeOpacity={0.8}
+        onPress={() => navigation.navigate('Report')}
+      >
+        <AlertTriangle size={26} color="#FFF" />
+      </TouchableOpacity>
+
       {/* --- ZONE SELECTOR MODAL --- */}
       <Modal
         animationType="slide"
@@ -370,7 +377,6 @@ const TrackScreen = ({ navigation }) => {
             <View style={styles.modalContent}>
                 <Text style={styles.modalTitle}>Select Zone</Text>
                 <ScrollView style={{ maxHeight: 400 }}>
-                    {/* "All Zones" Option */}
                     <TouchableOpacity 
                         style={[styles.modalItem, selectedIdentifier.zone_id === 'all' && styles.modalItemSelected]}
                         onPress={() => handleZoneSelect({ zone_id: 'all', zone_name: 'All Zones' })}
@@ -379,7 +385,6 @@ const TrackScreen = ({ navigation }) => {
                         {selectedIdentifier.zone_id === 'all' && <CheckCircle2 size={20} color="#3B82F6" />}
                     </TouchableOpacity>
 
-                    {/* Dynamic Zones (Filtered uniquely) */}
                     {Array.from(new Map(zonesData.map(z => [z.zone_id, z])).values()).map((zone, index) => {
                         const isSelected = selectedIdentifier.zone_id === zone.zone_id;
                         
@@ -444,14 +449,9 @@ const getStatusIcon = (status) => {
     return <View style={[styles.statusBadge, {backgroundColor: '#FEF2F2'}]}><Text style={{color: '#DC2626', fontSize: 10, fontWeight: '700'}}>MISSED</Text></View>;
 };
 
-
-
-
-
-
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#E3F3DF' },
-  scrollContent: { padding: 20, paddingBottom: 40 },
+  scrollContent: { padding: 20, paddingBottom: 100 }, // ✅ Increased to ensure bottom log items are visible above the FAB
   headerSection: { marginTop: -15, marginBottom: 20 },
   screenTitle: { fontSize: 28, fontWeight: '800', color: '#1e293b' },
   subTitle: { fontSize: 14, color: '#64748b', marginTop: 4, marginBottom: 15 },
@@ -494,6 +494,27 @@ const styles = StyleSheet.create({
   viewPhotoButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#eff6ff', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
   viewPhotoText: { fontSize: 11, color: '#3B82F6', fontWeight: '600', marginLeft: 6 },
   
+  // --- ✅ ALIGNED FAB STYLES ---
+  quickReportFab: { 
+    position: 'absolute', 
+    right: 20, 
+    bottom: Platform.OS === 'ios' ? 30 : 20, // Places it cleanly above the bottom tabs
+    width: 60, 
+    height: 60, 
+    borderRadius: 30, 
+    backgroundColor: '#1B5E20', // Matches your exact App theme color from AppNavigator
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    elevation: 8, 
+    shadowColor: '#1B5E20', 
+    shadowOffset: { width: 0, height: 4 }, 
+    shadowOpacity: 0.4, 
+    shadowRadius: 6, 
+    zIndex: 100,
+    borderWidth: 2,
+    borderColor: '#E3F3DF' // Blends with the screen background
+  },
+
   // Modals
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   modalContent: { backgroundColor: 'white', borderTopLeftRadius: 25, borderTopRightRadius: 25, padding: 25, paddingBottom: 40 },
