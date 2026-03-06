@@ -11,6 +11,7 @@ const reportRoutes = require('./routes/reportRoutes');
 const mobileRoutes = require('./routes/mobileRoutes');
 const collectionRoutes = require('./routes/collectionRoutes');
 const archiveRoutes = require('./routes/archiveRoutes');
+const vehicleTrackingRoutes = require('./routes/vehicleTrackingRoutes');
 
 const app = express();
 app.use(cors());
@@ -22,6 +23,7 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use('/api/collections', collectionRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/zones', zoneRoutes);
+app.use('/api/tracking', vehicleTrackingRoutes);
 app.use('/api/bins', require('./routes/binRoutes'));
 app.use('/api/announcements', announcementRoutes); // ✅ Mount here
 app.use('/api/assignments', assignmentRoutes);
