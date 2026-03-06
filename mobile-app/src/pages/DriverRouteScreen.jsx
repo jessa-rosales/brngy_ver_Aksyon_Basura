@@ -346,23 +346,49 @@ const DriverRouteScreen = ({ navigation, route }) => {
     return futureMissions.length > 0 ? futureMissions[0] : assignedZones[0];
   }, [assignedZones]);
 
+  // 1. Create a ref to hold the latest location without triggering re-renders
+  const latestUserLoc = useRef(null);
+
+  // 2. Update the ref quietly whenever the GPS changes
+  useEffect(() => {
+    latestUserLoc.current = userLoc;
+  }, [userLoc]);
+
+  // 3. The Sync Interval (Notice 'userLoc' is removed from the dependencies at the bottom!)
   useEffect(() => {
     let syncInterval;
     
-    if (isDriver && isOnDuty && userLoc && currentMission?.vehicle_id) {
+    console.log("--- CHECKING GPS SYNC STATUS ---");
+    console.log("Is Driver?", isDriver);
+    console.log("Is On Duty?", isOnDuty);
+    console.log("Current Vehicle ID:", currentMission?.vehicle_id);
+    
+    if (isDriver && isOnDuty && currentMission?.vehicle_id) {
+      console.log("✅ TIMER STARTED: Will send GPS every 4 seconds!");
+      
       syncInterval = setInterval(() => {
-        driverService.updateTruckLocation(
-          currentMission.vehicle_id, 
-          userLoc[1], 
-          userLoc[0]  
-        );
+        const loc = latestUserLoc.current;
+        
+        if (loc) {
+          console.log(`🚀 SENDING TO BACKEND -> Lat: ${loc[1]}, Lng: ${loc[0]}`);
+          driverService.updateTruckLocation(
+            currentMission.vehicle_id, 
+            loc[1], 
+            loc[0]  
+          );
+        } else {
+          console.log("⏳ Waiting for GPS signal lock...");
+        }
       }, 4000); 
+      
+    } else {
+      console.log("❌ SYNC OFF: Missing duty status or vehicle ID.");
     }
 
     return () => {
       if (syncInterval) clearInterval(syncInterval);
     };
-  }, [isDriver, isOnDuty, userLoc, currentMission]);
+  }, [isDriver, isOnDuty, currentMission?.vehicle_id]);
 
   const handleToggleDuty = async () => {
     if (!userData || isTogglingDuty) return;
