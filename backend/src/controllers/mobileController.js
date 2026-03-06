@@ -250,8 +250,10 @@ const getActiveTrackingRoutes = async (req, res) => {
                 ST_X(v.current_location::geometry) AS truck_lng,
                 CURRENT_TIMESTAMP AS last_update
             FROM zones z
-            -- LEFT JOIN ensures we get the zone EVEN IF there is no active task
-            LEFT JOIN task_assignments ta ON z.zone_id = ta.zone_id AND ta.status IN ('Assigned', 'In Progress', 'Active')
+            -- 👇 ADDED: ta.is_archived = false
+            LEFT JOIN task_assignments ta ON z.zone_id = ta.zone_id 
+                AND ta.status IN ('Assigned', 'In Progress', 'Active')
+                AND ta.is_archived = false
             LEFT JOIN vehicles v ON ta.vehicle_id = v.vehicle_id
             LEFT JOIN users d ON ta.driver_id = d.user_id
             WHERE z.is_archived = false
@@ -294,8 +296,10 @@ const getActiveTrackingRoutes = async (req, res) => {
                         r.location_address AS address,
                         r.status,
                         r.resolved_at AS updated_at,
-                        (CASE WHEN r.photo_evidence_url IS NOT NULL OR r.resolved_photo_url IS NOT NULL THEN true ELSE false END) AS has_photo,
-                        COALESCE(r.resolved_photo_url, r.photo_evidence_url) AS photo_url, -- ✅ FIXED: Sent the actual image URL string to the app!
+                        -- 👇 FIXED: Only check for the collector's resolved photo
+                        (CASE WHEN r.resolved_photo_url IS NOT NULL THEN true ELSE false END) AS has_photo,
+                        -- 👇 FIXED: Only return the collector's resolved photo
+                        r.resolved_photo_url AS photo_url, 
                         CONCAT(u.first_name, ' ', u.last_name) AS collector_name,
                         ST_Y(r.location_coords::geometry) AS lat,
                         ST_X(r.location_coords::geometry) AS lng
