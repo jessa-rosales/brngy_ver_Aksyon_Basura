@@ -14,6 +14,8 @@ import { useUser } from '../context/UserContext';
 import { assignmentService } from '../services/assignmentService';
 import { vehicleService } from '../services/vehicleService';
 import { vehicleTrackingService } from '../services/vehicleTrackingService'; 
+// 🔥 NEW: Import logService to fetch real backend duty logs
+import { logService } from '../services/logService'; 
 
 // COMPONENTS
 import CreateAssignmentModal from '../components/CreateAssignmentModal';
@@ -27,6 +29,8 @@ const AssignTask = () => {
   const [assignments, setAssignments] = useState([]);
   const [trucks, setTrucks] = useState([]); 
   const [fleetWithLogs, setFleetWithLogs] = useState([]); 
+  // 🔥 NEW: State specifically to hold the duty logs from the backend
+  const [dutyLogs, setDutyLogs] = useState([]); 
   
   const [isLoading, setIsLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -72,16 +76,18 @@ const AssignTask = () => {
   const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const [assigns, opts, allVehicles, liveFleetRes] = await Promise.all([
+      const [assigns, opts, allVehicles, liveFleetRes, logsRes] = await Promise.all([
         assignmentService.getAssignments().catch(() => []),
         assignmentService.getOptions().catch(() => ({ drivers: [], collectors: [], vehicles: [], zones: [] })),
         vehicleService.getAll().catch(() => []),
-        vehicleTrackingService.getLiveFleet().catch(() => ({ data: [] }))
+        vehicleTrackingService.getLiveFleet().catch(() => ({ data: [] })),
+        logService.getAllDutyLogs().catch(() => ({ data: [] })) 
       ]);
       
       setAssignments(Array.isArray(assigns) ? assigns : []);
       setTrucks(Array.isArray(allVehicles) ? allVehicles : []);
       setFleetWithLogs(liveFleetRes?.data || []); 
+      setDutyLogs(logsRes?.data || []); 
       
       setDataOptions({
         drivers: opts?.drivers || [],
@@ -131,40 +137,28 @@ const AssignTask = () => {
     return data.sort((a, b) => sortOrder === 'asc' ? a.vehicle_id - b.vehicle_id : b.vehicle_id - a.vehicle_id);
   }, [trucks, assignments, searchTerm, sortOrder]);
 
+  // 🔥 FIXED: Now directly maps over the new `dutyLogs` state instead of fleetWithLogs
   const allDutyLogs = useMemo(() => {
-    const logs = [];
-    const seen = new Set();
-    fleetWithLogs.forEach(truck => {
-      if (truck.history && Array.isArray(truck.history)) {
-        truck.history.forEach(log => {
-          const uniqueKey = `${truck.vehicle_id}_${log.date}_${log.start}`;
-          if (!seen.has(uniqueKey)) {
-            if (startDate && endDate) {
-                const logDate = new Date(log.date);
-                const start = new Date(startDate);
-                const end = new Date(endDate);
-                start.setHours(0,0,0,0);
-                end.setHours(23,59,59,999);
-                if (logDate < start || logDate > end) return;
-            }
-            seen.add(uniqueKey);
-            logs.push({
-              ...log,
-              vehicle_name: log.log_vehicle_name,
-              plate_number: log.log_plate_number,
-              zone_name: log.log_zone_name,
-              schedStart: log.schedStart,
-              schedEnd: log.schedEnd,
-              workDays: log.workDays || [],
-              task_id: truck.task_id
-            });
-          }
-        });
-      }
-    });
-    let filtered = logs.filter(log => `${log.driverName} ${log.vehicle_name} ${log.zone_name}`.toLowerCase().includes(searchTerm.toLowerCase()));
-    return filtered.sort((a, b) => new Date(b.date) - new Date(a.date));
-  }, [fleetWithLogs, searchTerm, startDate, endDate]);
+    let filtered = dutyLogs || [];
+
+    if (searchTerm) {
+      filtered = filtered.filter(log => 
+        `${log.driver_name} ${log.vehicle_name} ${log.zone_name} ${log.plate_number}`
+        .toLowerCase().includes(searchTerm.toLowerCase())
+      );
+    }
+
+    if (startDate && endDate) {
+      const s = new Date(startDate); s.setHours(0,0,0,0);
+      const e = new Date(endDate); e.setHours(23,59,59,999);
+      filtered = filtered.filter(log => {
+        const logDate = new Date(log.date_logged);
+        return logDate >= s && logDate <= e;
+      });
+    }
+
+    return filtered;
+  }, [dutyLogs, searchTerm, startDate, endDate]);
 
   const handleSaveAssignment = async (payload) => {
     let res = editingAssignment ? await assignmentService.update(editingAssignment.task_id, payload) : await assignmentService.establish(payload);
@@ -261,9 +255,7 @@ const AssignTask = () => {
 
         <motion.div variants={itemVars} className="bg-white rounded-xl shadow-sm border border-gray-100 border-t-[6px] border-t-[#2B9447] overflow-hidden min-h-[500px] flex flex-col">
           
-          {/* 🔥 UPDATED TABLE CONTROLS: Tabs on Left, Actions (Calendar/Buttons) on Right */}
           <div className="flex items-center justify-between p-4 bg-white border-b border-slate-50">
-            {/* Left Side: Tabs */}
             <div className="flex bg-gray-100 p-1 rounded-lg relative w-96">
                 <div className={`absolute top-1 bottom-1 left-1 w-[calc(33.33%-4px)] bg-white rounded-md shadow-sm transition-transform duration-300 ${activeTab === 'trucks' ? 'translate-x-full' : activeTab === 'logs' ? 'translate-x-[200%]' : 'translate-x-0'}`} />
                 <button onClick={() => setActiveTab('assign')} className={`relative z-10 flex-1 px-4 py-2 text-xs font-bold ${activeTab === 'assign' ? 'text-green-800' : 'text-gray-500'}`}>Assign Task</button>
@@ -271,7 +263,6 @@ const AssignTask = () => {
                 <button onClick={() => setActiveTab('logs')} className={`relative z-10 flex-1 px-4 py-2 text-xs font-bold ${activeTab === 'logs' ? 'text-green-800' : 'text-gray-500'}`}>Duty Logs</button>
             </div>
 
-            {/* Right Side: Calendar or Buttons */}
             <div className="flex items-center gap-3">
               <AnimatePresence mode="wait">
                 {activeTab === 'logs' ? (
@@ -481,19 +472,20 @@ const AssignTask = () => {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-50">
+                        {/* 🔥 FIXED: Now maps over the correct database keys */}
                         {allDutyLogs.length > 0 ? allDutyLogs.map((log, idx) => (
                           <motion.tr key={idx} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: idx * 0.01 }} className="group hover:bg-slate-50/40 transition-all duration-200">
                              <td className="px-6 py-6 align-top">
                                <div className="flex items-center gap-3 text-[#1B5E20]">
                                   <Calendar size={16} className="bg-emerald-50 p-0.5 rounded" />
-                                  <span className="text-[13px] font-black">{log.date}</span>
+                                  <span className="text-[13px] font-black">{log.date_logged}</span>
                                </div>
                              </td>
                              <td className="px-6 py-6 align-top">
                                <div className="space-y-2">
                                   <div className="flex items-center gap-2">
                                      <span className="text-[10px] bg-emerald-600 text-white px-2 py-0.5 rounded font-black uppercase tracking-tighter">Driver</span>
-                                     <span className="text-[13px] font-black text-slate-800">{log.driverName}</span>
+                                     <span className="text-[13px] font-black text-slate-800">{log.driver_name}</span>
                                   </div>
                                   <div className="flex flex-wrap gap-1.5 pl-11">
                                      {log.collectors?.map((name, i) => (
@@ -504,14 +496,15 @@ const AssignTask = () => {
                              </td>
                              <td className="px-6 py-6 align-top">
                                <div className="space-y-2">
-                                  <div className="flex items-center gap-2 text-[11px] font-black text-slate-700"><Clock size={12} className="text-blue-500" /> {log.start} — {log.end}</div>
-                                  <div className="flex items-center gap-2 text-[9px] font-bold text-slate-400 uppercase tracking-widest pl-5">Sched: {log.schedStart} - {log.schedEnd}</div>
+                                  <div className="flex items-center gap-2 text-[11px] font-black text-slate-700">
+                                    <Clock size={12} className={log.status === 'Active' ? 'text-emerald-500 animate-pulse' : 'text-blue-500'} /> 
+                                    {log.actual_start} — {log.actual_end}
+                                  </div>
+                                  <div className="flex items-center gap-2 text-[9px] font-bold text-slate-400 uppercase tracking-widest pl-5">Sched: {log.sched_start} - {log.sched_end}</div>
                                   <div className="flex -space-x-1 pl-5 pt-1">
                                       {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day, i) => {
                                         const isActive = Array.isArray(log.workDays) && log.workDays.includes(day);
-                                        return (
-                                          <div key={i} className={`w-5 h-5 rounded-full border-2 border-white flex items-center justify-center text-[8px] font-black shadow-sm transition-all ${isActive ? 'bg-emerald-500 text-white z-10 scale-110' : 'bg-slate-100 text-slate-300'}`}>{day.charAt(0)}</div>
-                                        );
+                                        return <div key={i} className={`w-5 h-5 rounded-full border-2 border-white flex items-center justify-center text-[8px] font-black shadow-sm transition-all ${isActive ? 'bg-emerald-500 text-white z-10 scale-110' : 'bg-slate-100 text-slate-300'}`}>{day.charAt(0)}</div>;
                                       })}
                                   </div>
                                </div>
@@ -525,18 +518,27 @@ const AssignTask = () => {
                                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">{log.plate_number}</span>
                                </div>
                              </td>
-                             <td className="px-6 py-6 align-top">
-                                <div className="flex gap-4">
-                                   <div className="flex flex-col">
-                                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter mb-0.5">Bins</span>
-                                      <span className="text-[12px] font-black text-emerald-600 flex items-center gap-1"><Trash2 size={10}/> {log.bins}</span>
-                                   </div>
-                                   <div className="flex flex-col">
-                                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter mb-0.5">Reports</span>
-                                      <span className="text-[12px] font-black text-blue-600 flex items-center gap-1"><CheckCircle2 size={10}/> {log.reports}</span>
-                                   </div>
+                             {/* 🔥 UPDATED PERFORMANCE COLUMN */}
+                              <td className="px-6 py-6 align-top">
+                                <div className="flex gap-5">
+                                    <div className="flex flex-col">
+                                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter mb-0.5">Bins Progress</span>
+                                      <span className="text-[12px] font-black text-emerald-600 flex items-center gap-1">
+                                          <Trash2 size={10}/> 
+                                          {log.bins_collected || 0} <span className="text-slate-300 mx-0.5">/</span> {log.total_zone_bins || 0}
+                                      </span>
+                                    </div>
+                                    <div className="flex flex-col">
+                                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter mb-0.5">Reports Fixed</span>
+                                      <span className="text-[12px] font-black text-blue-600 flex items-center gap-1">
+                                          <CheckCircle2 size={10}/> 
+                                          {/* 🔥 Now correctly shows Resolved Count / Total Assigned Count */}
+                                          {log.reports_resolved || 0} <span className="text-slate-300 mx-0.5">/</span> {log.total_assigned_reports || 0}
+                                      </span>
+                                    </div>
                                 </div>
-                             </td>
+                              </td>
+                             {/* 🔥 END OF UPDATED PERFORMANCE COLUMN */}
                           </motion.tr>
                         )) : (
                           <tr><td colSpan="6" className="px-6 py-20 text-center text-slate-400 italic">No historical duty logs found in the system.</td></tr>
