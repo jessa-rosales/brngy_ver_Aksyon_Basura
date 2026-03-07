@@ -12,6 +12,10 @@ const mobileRoutes = require('./routes/mobileRoutes');
 const collectionRoutes = require('./routes/collectionRoutes');
 const archiveRoutes = require('./routes/archiveRoutes');
 const vehicleTrackingRoutes = require('./routes/vehicleTrackingRoutes');
+const logRoutes = require('./routes/logRoutes');
+
+const publicRoutes = require('./routes/publicRoutes'); //for landingpage public view
+
 
 const app = express();
 app.use(cors());
@@ -25,13 +29,15 @@ app.use('/api/users', userRoutes);
 app.use('/api/zones', zoneRoutes);
 app.use('/api/tracking', vehicleTrackingRoutes);
 app.use('/api/bins', require('./routes/binRoutes'));
-app.use('/api/announcements', announcementRoutes); // ✅ Mount here
+app.use('/api/logs', logRoutes);
+app.use('/api/announcements', announcementRoutes);
 app.use('/api/assignments', assignmentRoutes);
 app.use('/api/vehicles', vehicleRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/mobile', mobileRoutes);
 app.use('/api/archive', archiveRoutes);
 
+app.use('/api/public', publicRoutes); // Mount the public routes
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
