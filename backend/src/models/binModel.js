@@ -29,11 +29,13 @@ const deleteBin = async (binId) => {
   return result.rowCount > 0;
 };
 
+
 const getAllBins = async () => {
   const query = `
     SELECT bin_id, bin_name, bin_address, collection_status, zone_id,
            ST_Y(location::geometry) as latitude, 
-           ST_X(location::geometry) as longitude 
+           ST_X(location::geometry) as longitude,
+           last_collected_timestamp AS "collectedAt" -- para ni mo balik og pending after 11:59 pm
     FROM waste_bins
   `;
   const result = await pool.query(query);
