@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { 
   Search, Trash2, X, ChevronDown, Clock, Calendar as CalendarIcon,
   MapPin, CheckCircle, AlertTriangle, RefreshCw, User, Eye,
@@ -18,6 +18,7 @@ import ConfirmDialog from '../components/ConfirmDialog';
 
 const CollectedBins = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useUser();
   const { layout: l, userManagement: u } = design;
 
@@ -78,6 +79,23 @@ const CollectedBins = () => {
       loadData();
     }
   }, [user, loadData]);
+
+  // CATCH AUTO-OPEN MODAL FROM DASHBOARD
+  useEffect(() => {
+    if (!loading && collectedBins.length > 0 && location.state?.autoOpenId) {
+      const targetId = String(location.state.autoOpenId).replace('COL-', '');
+      
+      const binToOpen = collectedBins.find(
+        b => String(b.id).replace('COL-', '') === targetId
+      );
+      
+      if (binToOpen) {
+        setSelectedBin(binToOpen);
+        setIsModalOpen(true);
+        window.history.replaceState({}, document.title);
+      }
+    }
+  }, [loading, collectedBins, location]);
 
   // Handle outside click for custom dropdowns
   useEffect(() => {
@@ -348,6 +366,7 @@ const CollectedBins = () => {
                         </div>
                         <div>
                           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Location</p>
+                          {/* 🔥 FIXED SYNTAX ERROR HERE */}
                           <p className="text-sm font-bold text-slate-700 leading-snug">{bin.binAddress || 'Address not provided'}</p>
                         </div>
                       </div>
