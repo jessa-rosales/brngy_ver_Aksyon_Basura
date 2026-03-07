@@ -1,15 +1,18 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import Map, { Marker, NavigationControl, Popup } from 'react-map-gl/mapbox';
+import Map, { Marker, NavigationControl, Popup, Source, Layer } from 'react-map-gl/mapbox';
 import { 
   Search, Bell, Truck, MapPin, X, Navigation, 
   Activity, Users, Crosshair, Layers, Map as MapIcon, Route,
-  CheckCircle2, AlertTriangle, Clock, Calendar
+  CheckCircle2, AlertTriangle, Clock, Calendar,
+  Trash2, AlertCircle
 } from 'lucide-react';
 
 // CONTEXT & SERVICES
 import { useUser } from '../context/UserContext';
 import { vehicleTrackingService } from '../services/vehicleTrackingService';
+import { zoneService } from '../services/zoneService';
+import { reportService } from '../services/reportService';
 import { design } from '../styles/design';
 
 // ✅ Custom Truck Icon
@@ -19,8 +22,55 @@ import truckIcon from '../assets/truck.png';
 const MAPBOX_TOKEN = 'pk.eyJ1IjoiamVnby1ybyIsImEiOiJjbWx6dnZ6YmQwOW12NGtxd25vMmJldGZhIn0.uCCN-70t1ZZugt6h1ZoMOg';
 
 // ==========================================
+// 🔥 MATH HELPER: Point in Polygon
+// Used to count bins/reports inside a zone
+// ==========================================
+const isPointInPolygon = (lat, lng, polygon) => {
+  if (!polygon || !Array.isArray(polygon)) return false;
+  const x = Number(lat);
+  const y = Number(lng);
+  let inside = false;
+  
+  const coords = Array.isArray(polygon[0][0]) || typeof polygon[0][0] === 'object' 
+    ? polygon[0] 
+    : polygon;
+  
+  for (let i = 0, j = coords.length - 1; i < coords.length; j = i++) {
+    const xi = Number(coords[i].lat ?? coords[i][0]);
+    const yi = Number(coords[i].lng ?? coords[i][1]);
+    const xj = Number(coords[j].lat ?? coords[j][0]);
+    const yj = Number(coords[j].lng ?? coords[j][1]);
+
+    const intersect = ((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+};
+
+// ==========================================
+// 🔥 MAPBOX LAYER STYLES FOR ZONES
+// ==========================================
+const zoneFillStyle = {
+  id: 'zones-fill',
+  type: 'fill',
+  paint: {
+    'fill-color': ['get', 'color'],
+    'fill-opacity': 0.15
+  }
+};
+
+const zoneLineStyle = {
+  id: 'zones-line',
+  type: 'line',
+  paint: {
+    'line-color': ['get', 'color'],
+    'line-width': 2,
+    'line-dasharray': [2, 2]
+  }
+};
+
+// ==========================================
 // 🔥 CUSTOM SMOOTH MARKER
-// Calculates micro-coordinates at 60fps so the truck "drives" smoothly
 // ==========================================
 const AnimatedMarker = ({ longitude, latitude, children, onClick }) => {
   const [pos, setPos] = useState([longitude, latitude]);
@@ -86,6 +136,14 @@ const VehicleTracking = () => {
   const [mapType, setMapType] = useState('streets'); 
   const [is3D, setIs3D] = useState(true); 
 
+  // 🔥 REAL DATA STATES
+  const [zones, setZones] = useState([]); 
+  const [bins, setBins] = useState([]);
+  const [reports, setReports] = useState([]);
+  
+  // 🔥 NEW: State for Zone Popup
+  const [selectedZoneInfo, setSelectedZoneInfo] = useState(null);
+
   const [viewState, setViewState] = useState({
     longitude: 124.6459, 
     latitude: 8.4772,    
@@ -95,12 +153,23 @@ const VehicleTracking = () => {
 
   const loadData = useCallback(async () => {
     try {
-      const response = await vehicleTrackingService.getLiveFleet();
-      if (response && response.success) {
-        const fleet = response.data || [];
+      const [fleetRes, zoneData, binData, reportData] = await Promise.all([
+        vehicleTrackingService.getLiveFleet(),
+        zoneService.getZones(),
+        zoneService.getAllBins(),
+        reportService.getAllReports()
+      ]);
+      
+      if (fleetRes && fleetRes.success) {
+        const fleet = fleetRes.data || [];
         setVehicles(fleet);
         updateMovementStates(fleet);
       }
+
+      setZones(zoneData || []);
+      setBins(binData || []);
+      setReports(reportData?.reports || []);
+
     } catch (error) {
       console.error("Failed to load tracking data", error);
     } finally {
@@ -120,27 +189,22 @@ const VehicleTracking = () => {
       const mem = trackingMemory.current[id];
 
       if (mem) {
-        // threshold: approx 1.5 meters to ignore GPS drift
         const movedSignificantly = 
           Math.abs(mem.lat - currentLat) > 0.000015 || 
           Math.abs(mem.lng - currentLng) > 0.000015;
 
         if (movedSignificantly) {
-          // TRUCK IS MOVING
           newStatuses[id] = { state: 'Running', lastMoved: now };
           trackingMemory.current[id] = { lat: currentLat, lng: currentLng, lastMoved: now };
         } else {
-          // TRUCK IS STATIC - Check if it was already running
           const timeSinceMove = now - mem.lastMoved;
-          if (timeSinceMove > 15000) { // 15 seconds of no movement = Parked
+          if (timeSinceMove > 15000) { 
             newStatuses[id] = { state: 'Parked', lastMoved: mem.lastMoved };
           } else {
-            // Keep current state (handles red lights/short stops)
             newStatuses[id] = newStatuses[id] || { state: 'Parked', lastMoved: now };
           }
         }
       } else {
-        // First time seeing this truck
         newStatuses[id] = { state: 'Parked', lastMoved: now };
         trackingMemory.current[id] = { lat: currentLat, lng: currentLng, lastMoved: now };
       }
@@ -159,12 +223,103 @@ const VehicleTracking = () => {
     }
   }, [user, loadData, navigate]);
 
+  // ==========================================
+  // 🔥 DATA PROCESSING & GEOJSON CONVERSION
+  // ==========================================
+
+  const processedBins = useMemo(() => {
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+    return bins.map(bin => {
+      let displayStatus = (bin.collection_status || 'pending').toLowerCase(); 
+      
+      if (displayStatus === 'collected' && bin.collectedAt) {
+        const collectedDate = new Date(bin.collectedAt);
+        if (collectedDate < startOfToday) {
+          displayStatus = 'pending';
+        }
+      }
+      return { ...bin, displayStatus };
+    });
+  }, [bins]);
+
+  const visibleReports = useMemo(() => {
+    const now = Date.now();
+    const FIVE_HOURS_MS = 5 * 60 * 60 * 1000;
+
+    return reports.filter(report => {
+      const status = (report.status || '').toLowerCase();
+      
+      if (status === 'resolved' || status === 'resolve' || status === 'collected') {
+        const timeField = report.resolvedAt || report.resolved_at || report.updated_at;
+        
+        if (timeField) {
+          const resolvedTime = new Date(timeField).getTime();
+          return (now - resolvedTime) < FIVE_HOURS_MS;
+        }
+        return false; 
+      }
+      return true;
+    });
+  }, [reports]);
+
+  // 🔥 NEW: Add Bin & Report Counts directly into GeoJSON Properties
+  const zonesGeoJSON = useMemo(() => {
+    if (!zones || zones.length === 0) return null;
+
+    const features = zones.map(zone => {
+      if (!zone.boundaries) return null;
+      
+      const coords = Array.isArray(zone.boundaries[0]) ? zone.boundaries[0] : zone.boundaries;
+      
+      const polygonCoords = coords.map(p => [
+        Number(p.lng ?? p[1]), 
+        Number(p.lat ?? p[0])
+      ]);
+
+      // Calculate totals for this zone
+      const zoneBins = processedBins.filter(b => 
+        String(b.zone_id) === String(zone.zone_id) || 
+        isPointInPolygon(b.latitude, b.longitude, zone.boundaries)
+      ).length;
+
+      const zoneReports = visibleReports.filter(r => 
+        isPointInPolygon(r.latitude, r.longitude, zone.boundaries)
+      ).length;
+
+      return {
+        type: 'Feature',
+        properties: { 
+          id: zone.zone_id, 
+          name: zone.zone_name, 
+          color: zone.zone_color || '#10B981',
+          binCount: zoneBins,
+          reportCount: zoneReports
+        },
+        geometry: {
+          type: 'Polygon',
+          coordinates: [polygonCoords] 
+        }
+      };
+    }).filter(Boolean);
+
+    return { type: 'FeatureCollection', features };
+  }, [zones, processedBins, visibleReports]);
+
   const liveFleet = useMemo(() => {
-    return vehicles.filter(truck => 
-      `${truck.vehicle_name} ${truck.plate_number} ${truck.driverName}`
-      .toLowerCase()
-      .includes(searchTerm.toLowerCase())
-    );
+    return vehicles.map(truck => {
+      let filteredHistory = truck.history || [];
+      
+      // Fallback behavior: only show most recent 2 shifts
+      filteredHistory = filteredHistory.slice(0, 2);
+
+      return { ...truck, filteredHistory };
+    }).filter(truck => {
+      const searchString = `${truck.vehicle_name} ${truck.plate_number} ${truck.filteredHistory.map(h => h.driverName).join(' ')}`
+        .toLowerCase();
+      return searchString.includes(searchTerm.toLowerCase());
+    });
   }, [vehicles, searchTerm]);
 
   const activeSelectedTruck = liveFleet.find(t => t.vehicle_id === selectedTruckId);
@@ -195,6 +350,22 @@ const VehicleTracking = () => {
       transitionDuration: 500
     }));
   };
+
+  // 🔥 NEW: Map Click Handler for Zones
+  const handleMapClick = useCallback((event) => {
+    const { features, lngLat } = event;
+    const clickedFeature = features && features.find(f => f.layer.id === 'zones-fill');
+    
+    if (clickedFeature) {
+      setSelectedZoneInfo({
+        longitude: lngLat.lng,
+        latitude: lngLat.lat,
+        ...clickedFeature.properties
+      });
+    } else {
+      setSelectedZoneInfo(null);
+    }
+  }, []);
 
   if (!user) return null;
 
@@ -244,15 +415,16 @@ const VehicleTracking = () => {
       {/* MAIN CONTENT */}
       <main className="p-8 space-y-8">
         
-        {/* Title Bar */}
-        <div ref={mapContainerRef} className="flex justify-between items-end pt-2">
+        {/* Title Bar & Filter */}
+        <div ref={mapContainerRef} className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 pt-2">
           <div>
             <h2 className="text-3xl font-bold text-[#1B5E20]">Live Fleet Tracking</h2>
             <p className="text-gray-600 text-sm mt-1">Real-time GPS positioning of all active collection vehicles</p>
           </div>
-          <div className="flex items-center gap-3">
-            <span className="flex items-center gap-2 px-4 py-2 bg-emerald-100 text-emerald-800 rounded-full text-xs font-bold border border-emerald-200 shadow-sm animate-pulse">
-              <Activity size={14} /> LIVE SATELLITE LINK
+          <div className="flex items-center gap-4">
+            {/* Removed Calendar Filter UI per request */}
+            <span className="flex items-center gap-2 px-4 py-2 bg-emerald-100 text-emerald-800 rounded-xl text-xs font-bold border border-emerald-200 shadow-sm animate-pulse">
+              <Activity size={14} /> SATELLITE LINK
             </span>
           </div>
         </div>
@@ -269,8 +441,109 @@ const VehicleTracking = () => {
               mapStyle={mapType === 'satellite' ? 'mapbox://styles/mapbox/satellite-streets-v12' : 'mapbox://styles/mapbox/streets-v12'}
               mapboxAccessToken={MAPBOX_TOKEN}
               style={{ width: '100%', height: '100%' }}
+              interactiveLayerIds={['zones-fill']} // 🔥 REQUIRED to make layer clickable
+              onClick={handleMapClick} // 🔥 Added Click Handler
             >
               <NavigationControl position="top-right" />
+
+              {/* 🔥 ZONES POLYGONS VIA GEOJSON */}
+              {zonesGeoJSON && (
+                <Source id="zones-data" type="geojson" data={zonesGeoJSON}>
+                  <Layer {...zoneFillStyle} />
+                  <Layer {...zoneLineStyle} />
+                </Source>
+              )}
+
+              {/* 🔥 NEW: ZONE CLICK POPUP */}
+              {selectedZoneInfo && (
+                <Popup
+                  longitude={selectedZoneInfo.longitude}
+                  latitude={selectedZoneInfo.latitude}
+                  anchor="bottom"
+                  offset={15}
+                  closeButton={false}
+                  onClose={() => setSelectedZoneInfo(null)}
+                  className="z-50"
+                  style={{ padding: 0 }}
+                >
+                  <div className="bg-white rounded-2xl p-4 shadow-xl border border-slate-100 min-w-[160px]">
+                    <h4 className="font-black text-slate-800 uppercase tracking-tight border-b border-slate-100 pb-2 mb-2">
+                      {selectedZoneInfo.name}
+                    </h4>
+                    <div className="flex justify-between items-center mb-1">
+                      <span className="text-xs font-bold text-slate-500 flex items-center gap-1.5">
+                        <Trash2 size={12} className="text-emerald-500"/> Total Bins
+                      </span>
+                      <span className="text-sm font-black text-emerald-600">{selectedZoneInfo.binCount}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs font-bold text-slate-500 flex items-center gap-1.5">
+                        <AlertCircle size={12} className="text-rose-500"/> Active Reports
+                      </span>
+                      <span className="text-sm font-black text-rose-600">{selectedZoneInfo.reportCount}</span>
+                    </div>
+                  </div>
+                </Popup>
+              )}
+
+              {/* 🔥 BINS MARKERS */}
+              {processedBins.map((bin, idx) => {
+                let outerPulse = 'bg-slate-500/20';
+                let innerBg = 'bg-slate-700';
+                let pinTail = 'bg-slate-700';
+
+                if (bin.displayStatus === 'pending') {
+                  outerPulse = 'bg-emerald-500/20 animate-pulse';
+                  innerBg = 'bg-emerald-700';
+                  pinTail = 'bg-emerald-700';
+                } else if (bin.displayStatus === 'missed') {
+                  outerPulse = 'bg-rose-500/20 animate-pulse';
+                  innerBg = 'bg-rose-700';
+                  pinTail = 'bg-rose-700';
+                }
+
+                return (
+                  <Marker key={`bin-${bin.bin_id || idx}`} longitude={Number(bin.longitude)} latitude={Number(bin.latitude)} anchor="bottom">
+                    <div className="relative flex items-center justify-center cursor-pointer pb-2" title={`Bin: ${bin.displayStatus}`}>
+                      <div className={`absolute w-8 h-8 rounded-full ${outerPulse}`} />
+                      <div className={`relative p-1.5 rounded-full border-2 border-white shadow-lg flex items-center justify-center ${innerBg}`}>
+                        <Trash2 color="white" size={12} />
+                      </div>
+                      <div className={`absolute bottom-1 w-2 h-2 rotate-45 border-r border-b border-white ${pinTail}`} />
+                    </div>
+                  </Marker>
+                );
+              })}
+
+              {/* 🔥 REPORTS MARKERS */}
+              {visibleReports.map((report, idx) => {
+                const status = (report.status || '').toLowerCase();
+                let outerPulse = 'bg-slate-500/20';
+                let innerBg = 'bg-slate-600';
+                let pinTail = 'bg-slate-600';
+
+                if (status === 'pending') {
+                  outerPulse = 'bg-rose-500/40 animate-ping';
+                  innerBg = 'bg-rose-600';
+                  pinTail = 'bg-rose-600';
+                } else if (status === 'in progress' || status === 'in_progress') {
+                  outerPulse = 'bg-orange-500/40 animate-pulse';
+                  innerBg = 'bg-orange-600';
+                  pinTail = 'bg-orange-600';
+                }
+
+                return (
+                  <Marker key={`report-${report.report_id || idx}`} longitude={Number(report.longitude)} latitude={Number(report.latitude)} anchor="bottom">
+                    <div className="relative flex items-center justify-center cursor-pointer pb-2" title={`Report: ${report.status}`}>
+                      <div className={`absolute w-10 h-10 rounded-full ${outerPulse}`} />
+                      <div className={`relative p-1.5 rounded-full border-2 border-white shadow-lg flex items-center justify-center ${innerBg}`}>
+                        <AlertCircle color="white" size={12} fill="white" fillOpacity={0.2} />
+                      </div>
+                      <div className={`absolute bottom-1 w-2 h-2 rotate-45 border-r border-b border-white ${pinTail}`} />
+                    </div>
+                  </Marker>
+                );
+              })}
 
               {/* Render Map Markers */}
               {liveFleet.map((truck) => {
@@ -304,7 +577,6 @@ const VehicleTracking = () => {
                           alt="truck" 
                           style={{ width: 24, height: 24, objectFit: 'contain' }}
                         />
-                        {/* Parked/Running Status Dot */}
                         <div style={{
                           position: 'absolute',
                           top: -2,
@@ -355,17 +627,11 @@ const VehicleTracking = () => {
                     
                     <div className="space-y-2 mt-3 pt-3 border-t border-slate-50">
                       <div className="flex items-center gap-2 text-xs font-semibold text-slate-600">
-                        <Users size={12} className="text-blue-500" /> {activeSelectedTruck.driverName}
+                        <Users size={12} className="text-blue-500" /> 
+                        {activeSelectedTruck.filteredHistory[0]?.driverName || 'Unassigned'}
                       </div>
                       <div className="flex items-center gap-2 text-xs font-semibold text-slate-600">
-                        <MapPin size={12} className="text-rose-500" /> {activeSelectedTruck.zoneName}
-                      </div>
-                      <div className="flex items-center gap-2 text-xs font-semibold text-slate-600">
-                        <Route size={12} className="text-emerald-500" /> {activeSelectedTruck.distanceKm} km traveled
-                      </div>
-                      <div className="flex items-center gap-2 text-xs font-semibold text-slate-600">
-                        <Crosshair size={12} className="text-amber-500" /> 
-                        {Number(activeSelectedTruck.lat || 0).toFixed(5)}, {Number(activeSelectedTruck.lng || 0).toFixed(5)}
+                        <Route size={12} className="text-emerald-500" /> {activeSelectedTruck.distanceKm || 0} km traveled
                       </div>
                     </div>
                   </div>
@@ -413,11 +679,11 @@ const VehicleTracking = () => {
         {/* BOTTOM DASHBOARD */}
         <div className="bg-white rounded-2xl shadow-md border border-gray-100 flex flex-col overflow-hidden">
           <div className="p-5 border-b bg-white border-t-4 border-[#2B9447] flex justify-between items-center">
-            <h3 className="text-xl font-bold text-gray-800">Active Vehicles Dashboard</h3>
-            <span className="bg-emerald-500 text-white px-3 py-1 rounded-lg text-xs font-bold">{liveFleet.length} Online</span>
+            <h3 className="text-xl font-bold text-gray-800">Physical Fleet Roster</h3>
+            <span className="bg-emerald-500 text-white px-3 py-1 rounded-lg text-xs font-bold">{liveFleet.length} Assets Found</span>
           </div>
           
-          <div className="p-6 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+          <div className="p-6 grid grid-cols-1 xl:grid-cols-3 gap-6">
             {liveFleet.length > 0 ? (
               liveFleet.map((truck) => {
                 const isRunning = movementStatus[truck.vehicle_id]?.state === 'Running';
@@ -443,66 +709,70 @@ const VehicleTracking = () => {
                         </div>
                       </div>
                       
-                      <div className={`flex items-center gap-1 text-[10px] font-black px-2 py-1 rounded-md border ${
-                        isRunning 
-                          ? 'text-emerald-600 bg-emerald-50 border-emerald-100' 
-                          : 'text-orange-600 bg-orange-50 border-orange-100'
-                      }`}>
-                        {isRunning ? <Activity size={10} /> : <MapPin size={10} />}
-                        {isRunning ? 'RUNNING' : 'PARKED'}
+                      <div className="flex flex-col items-end gap-1">
+                        <div className={`flex items-center gap-1 text-[10px] font-black px-2 py-1 rounded-md border ${
+                          isRunning 
+                            ? 'text-emerald-600 bg-emerald-50 border-emerald-100' 
+                            : 'text-orange-600 bg-orange-50 border-orange-100'
+                        }`}>
+                          {isRunning ? <Activity size={10} /> : <MapPin size={10} />}
+                          {isRunning ? 'RUNNING' : 'PARKED'}
+                        </div>
                       </div>
                     </div>
 
-                    <div className="space-y-3 mt-2 flex-1">
-                      <div className="flex items-center gap-3 text-gray-600 text-sm font-medium">
-                        <Users size={16} className="text-indigo-400" />
-                        <span className="truncate">Driver: <strong className="text-gray-800">{truck.driverName}</strong></span>
-                      </div>
-                      <div className="flex items-center gap-3 text-gray-600 text-sm font-medium">
-                        <MapPin size={16} className="text-rose-400" />
-                        <span className="truncate">Zone: <strong className="text-gray-800">{truck.zoneName}</strong></span>
-                      </div>
-
-                      <div className="flex items-center justify-between bg-slate-50 p-3 rounded-xl border border-slate-100 my-2">
-                        <div className="flex items-center gap-2 text-sm">
-                          <CheckCircle2 size={16} className="text-emerald-500" />
-                          <span className="text-gray-600 font-medium">Collected: <strong className="text-emerald-700">{truck.binsCollected}</strong></span>
-                        </div>
-                        <div className="flex items-center gap-2 text-sm">
-                          <AlertTriangle size={16} className="text-rose-500" />
-                          <span className="text-gray-600 font-medium">Missed: <strong className="text-rose-700">{truck.missedPickups}</strong></span>
-                        </div>
-                      </div>
-
-                      <div className="flex items-start gap-3 text-gray-600 text-sm font-medium">
-                        <Navigation size={16} className="text-sky-500 mt-0.5" />
-                        <span className="truncate">Loc: <strong className="text-gray-800">{Number(truck.lat || 0).toFixed(5)}, {Number(truck.lng || 0).toFixed(5)}</strong></span>
-                      </div>
+                    <div className="flex items-start gap-2 text-gray-600 text-xs font-medium mb-4 bg-slate-50 p-2 rounded-lg border border-slate-100">
+                      <Navigation size={14} className="text-sky-500 mt-0.5 flex-shrink-0" />
+                      <span className="truncate">Lat: {Number(truck.lat || 0).toFixed(5)} <br/> Lng: {Number(truck.lng || 0).toFixed(5)}</span>
                     </div>
 
-                    <div className="w-full h-px bg-gray-200 my-4" />
+                    <div className="w-full h-px bg-gray-200 my-2" />
                     
-                    {/* 🔥 UPDATED: ACTUAL DUTY LOG SCHEDULE SECTION */}
-                    <div className="flex flex-col gap-1.5 mb-4 px-1">
-                      <div className="flex items-center justify-between">
-                         <div className="flex items-center gap-1.5 text-xs text-gray-500 font-semibold uppercase">
-                            <Clock size={12} className="text-blue-500" /> Start Duty:
-                         </div>
-                         <span className="text-xs font-bold text-slate-700">{truck.startTime}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                         <div className="flex items-center gap-1.5 text-xs text-gray-500 font-semibold uppercase">
-                            <Calendar size={12} className="text-rose-500" /> End Duty:
-                         </div>
-                         <span className="text-xs font-bold text-slate-700">{truck.endTime}</span>
-                      </div>
+                    {/* 🔥 THE SHIFT ROSTER: Shows Driver A (Morning) & Driver B (Afternoon) in the SAME card */}
+                    <div className="flex-1 flex flex-col gap-2 mt-2">
+                      <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 px-1">Duty Sessions</h5>
+                      
+                      {truck.filteredHistory && truck.filteredHistory.length > 0 ? (
+                        truck.filteredHistory.map((shift, idx) => (
+                          <div key={idx} className={`p-3 rounded-xl border flex flex-col gap-2 ${shift.end === 'Active' ? 'bg-emerald-50/60 border-emerald-200 shadow-sm' : 'bg-slate-50 border-slate-200'}`}>
+                             <div className="flex justify-between items-center">
+                                <div className="flex items-center gap-2 text-xs font-bold text-slate-800">
+                                   <Users size={14} className="text-indigo-500"/> {shift.driverName}
+                                </div>
+                                {shift.end === 'Active' ? (
+                                   <span className="text-[8px] font-black text-emerald-700 bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-full animate-pulse tracking-widest">LIVE NOW</span>
+                                ) : (
+                                   <span className="text-[8px] font-black text-slate-500 bg-slate-200 border border-slate-300 px-2 py-0.5 rounded-full tracking-widest">COMPLETED</span>
+                                )}
+                             </div>
+                      
+                             <div className="flex items-center justify-between text-[11px] font-semibold text-slate-600">
+                                <span className="flex items-center gap-1.5"><MapPin size={12} className="text-rose-500"/> {shift.log_zone_name || shift.zoneName}</span>
+                                <span className="flex items-center gap-1.5"><Clock size={12} className="text-blue-500"/> {shift.start} - {shift.end}</span>
+                             </div>
+
+                             <div className="flex items-center justify-between text-[10px] font-black pt-2 mt-1 border-t border-slate-200/60">
+                                <span className="text-slate-400">{shift.date}</span>
+                                <div className="flex gap-3">
+                                  <span className="text-emerald-600 flex items-center gap-1"><CheckCircle2 size={12}/> {shift.bins || '0/0'} Bins</span>
+                                  <span className="text-blue-600 flex items-center gap-1"><AlertTriangle size={12}/> {shift.reports || 0} Reports</span>
+                                </div>
+                             </div>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="flex flex-col items-center justify-center py-4 bg-slate-50 rounded-xl border border-slate-200 border-dashed">
+                          <Calendar size={20} className="text-slate-300 mb-1" />
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">No matching shifts</p>
+                        </div>
+                      )}
                     </div>
 
                     <button 
                       onClick={() => focusOnTruck(truck)}
-                      className="w-full flex items-center justify-center gap-2 py-3 bg-emerald-50 text-emerald-700 rounded-xl border border-emerald-200 text-sm font-bold hover:bg-emerald-500 hover:text-white transition-all duration-200 cursor-pointer"
+                      className="mt-5 w-full flex items-center justify-center gap-2 py-3 bg-emerald-50 text-emerald-700 rounded-xl border border-emerald-200 text-sm font-bold hover:bg-emerald-500 hover:text-white transition-all duration-200 cursor-pointer"
                     >
-                      <Crosshair size={16} /> Locate on Map
+                      <Crosshair size={16} /> Locate Vehicle on Map
                     </button>
                   </div>
                 );
