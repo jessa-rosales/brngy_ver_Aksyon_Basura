@@ -14,6 +14,7 @@ import { design } from '../styles/design';
 // SERVICES & CONTEXT
 import { zoneService } from '../services/zoneService';
 import { reportService } from '../services/reportService'; 
+import { collectionService } from '../services/collectionService'; 
 import { useUser } from '../context/UserContext';
 
 // Helper: Calculate distance in meters between two coordinates (Haversine formula)
@@ -84,37 +85,79 @@ const MapFocusHandler = ({ selectedZoneId, zones }) => {
   return null;
 };
 
-const dashboardBinIcon = new L.DivIcon({
-  html: renderToStaticMarkup(
-    <div className="relative flex items-center justify-center">
-      <div className="absolute w-8 h-8 bg-emerald-500/20 rounded-full animate-pulse" />
-      <div className="relative bg-emerald-700 p-1.5 rounded-full border-2 border-white shadow-lg flex items-center justify-center">
-        <Trash2 color="white" size={12} />
-      </div>
-      <div className="absolute -bottom-1 w-2 h-2 bg-emerald-700 rotate-45 border-r border-b border-white" />
-    </div>
-  ),
-  className: 'main-bin-icon',
-  iconSize: [30, 30],
-  iconAnchor: [15, 30],
-  popupAnchor: [0, -30],
-});
+// ==========================================
+// 🔥 DYNAMIC MARKER ICONS
+// ==========================================
+const getBinIcon = (status) => {
+  let outerPulse = 'bg-slate-400/20';
+  let innerBg = 'bg-slate-500';
+  let pinTail = 'bg-slate-500';
+  let isPulse = false;
 
-const reportIcon = new L.DivIcon({
-  html: renderToStaticMarkup(
-    <div className="relative flex items-center justify-center">
-      <div className="absolute w-10 h-10 bg-rose-500/40 rounded-full animate-ping" />
-      <div className="relative bg-rose-600 p-1.5 rounded-full border-2 border-white shadow-lg flex items-center justify-center">
-        <AlertCircle color="white" size={12} fill="white" fillOpacity={0.2} />
+  if (status === 'pending') {
+    outerPulse = 'bg-emerald-500/20';
+    innerBg = 'bg-emerald-700';
+    pinTail = 'bg-emerald-700';
+    isPulse = true;
+  } else if (status === 'missed') {
+    outerPulse = 'bg-rose-500/20';
+    innerBg = 'bg-rose-700';
+    pinTail = 'bg-rose-700';
+    isPulse = true;
+  } // else gray for collected
+
+  return new L.DivIcon({
+    html: renderToStaticMarkup(
+      <div className="relative flex items-center justify-center">
+        {isPulse && <div className={`absolute w-8 h-8 rounded-full animate-pulse ${outerPulse}`} />}
+        <div className={`relative p-1.5 rounded-full border-2 border-white shadow-lg flex items-center justify-center ${innerBg}`}>
+          <Trash2 color="white" size={12} />
+        </div>
+        <div className={`absolute -bottom-1 w-2 h-2 rotate-45 border-r border-b border-white ${pinTail}`} />
       </div>
-      <div className="absolute -bottom-1 w-2 h-2 bg-rose-600 rotate-45 border-r border-b border-white" />
-    </div>
-  ),
-  className: 'report-marker-icon',
-  iconSize: [30, 30],
-  iconAnchor: [15, 30],
-  popupAnchor: [0, -30],
-});
+    ),
+    className: 'main-bin-icon',
+    iconSize: [30, 30],
+    iconAnchor: [15, 30],
+    popupAnchor: [0, -30],
+  });
+};
+
+const getReportIcon = (status) => {
+  const s = (status || '').toLowerCase();
+  let outerPulse = 'bg-slate-400/20';
+  let innerBg = 'bg-slate-500';
+  let pinTail = 'bg-slate-500';
+  let animation = '';
+
+  if (s === 'pending') {
+    outerPulse = 'bg-rose-500/40';
+    innerBg = 'bg-rose-600';
+    pinTail = 'bg-rose-600';
+    animation = 'animate-ping';
+  } else if (s === 'in progress' || s === 'in_progress') {
+    outerPulse = 'bg-orange-500/40';
+    innerBg = 'bg-orange-600';
+    pinTail = 'bg-orange-600';
+    animation = 'animate-pulse';
+  } // else gray for resolved
+
+  return new L.DivIcon({
+    html: renderToStaticMarkup(
+      <div className="relative flex items-center justify-center">
+        {animation && <div className={`absolute w-10 h-10 rounded-full ${animation} ${outerPulse}`} />}
+        <div className={`relative p-1.5 rounded-full border-2 border-white shadow-lg flex items-center justify-center ${innerBg}`}>
+          <AlertCircle color="white" size={12} fill="white" fillOpacity={0.2} />
+        </div>
+        <div className={`absolute -bottom-1 w-2 h-2 rotate-45 border-r border-b border-white ${pinTail}`} />
+      </div>
+    ),
+    className: 'report-marker-icon',
+    iconSize: [30, 30],
+    iconAnchor: [15, 30],
+    popupAnchor: [0, -30],
+  });
+};
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -123,13 +166,13 @@ const Dashboard = () => {
   const [zones, setZones] = useState([]);
   const [allBins, setAllBins] = useState([]);
   const [allReports, setAllReports] = useState([]); 
+  const [collectedBinsHistory, setCollectedBinsHistory] = useState([]); 
   
   const [selectedZoneId, setSelectedZoneId] = useState('all');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   
   const [showBackToTop, setShowBackToTop] = useState(false);
   
-  // --- MODAL STATE ---
   const [hotspotModal, setHotspotModal] = useState({ isOpen: false, type: '', data: null });
   
   const scrollContainerRef = useRef(null); 
@@ -142,14 +185,16 @@ const Dashboard = () => {
   useEffect(() => {
     const loadMapData = async () => {
       try {
-        const [zoneData, binData, reportData] = await Promise.all([
+        const [zoneData, binData, reportData, collectionsData] = await Promise.all([
           zoneService.getZones(),
           zoneService.getAllBins(),
-          reportService.getAllReports()
+          reportService.getAllReports(),
+          collectionService.getCollectedBins().catch(() => []) 
         ]);
         setZones(zoneData || []);
         setAllBins(binData || []);
-        setAllReports(reportData.reports || []);
+        setAllReports(reportData?.reports || []);
+        setCollectedBinsHistory(collectionsData || []);
       } catch (err) {
         console.error("Dashboard Load Error:", err);
       }
@@ -168,17 +213,61 @@ const Dashboard = () => {
 
   const scrollToTop = () => scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
 
+  // ==========================================
+  // 🔥 STATUS PROCESSING (Cycles & Vanish)
+  // ==========================================
+
+  // BINS LOGIC: Reset to pending if collected before 12:00 AM today
+  const processedBins = useMemo(() => {
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+    return allBins.map(bin => {
+      let displayStatus = (bin.collection_status || 'pending').toLowerCase(); 
+      
+      const collectedTime = bin.last_collected_timestamp || bin.collectedAt;
+      
+      if (displayStatus === 'collected' && collectedTime) {
+        const collectedDate = new Date(collectedTime);
+        if (collectedDate < startOfToday) {
+          displayStatus = 'pending';
+        }
+      }
+      return { ...bin, displayStatus };
+    });
+  }, [allBins]);
+
+  // REPORTS LOGIC: Vanish resolved reports after 5 hours
+  const visibleReports = useMemo(() => {
+    const now = Date.now();
+    const FIVE_HOURS_MS = 5 * 60 * 60 * 1000;
+
+    return allReports.filter(report => {
+      const status = (report.status || '').toLowerCase();
+      
+      if (status === 'resolved' || status === 'resolve') {
+        const timeField = report.resolved_at || report.resolvedAt || report.updated_at;
+        
+        if (timeField) {
+          const resolvedTime = new Date(timeField).getTime();
+          return (now - resolvedTime) < FIVE_HOURS_MS;
+        }
+        return false; // Hide if missing timestamp but resolved
+      }
+      return true; // Keep Pending and In Progress
+    });
+  }, [allReports]);
+
   // FILTERS
   const filteredZones = selectedZoneId === 'all' 
     ? zones 
     : zones.filter(z => String(z.zone_id) === String(selectedZoneId));
 
   const filteredBins = selectedZoneId === 'all' 
-    ? allBins 
-    : allBins.filter(b => String(b.zone_id) === String(selectedZoneId));
+    ? processedBins 
+    : processedBins.filter(b => String(b.zone_id) === String(selectedZoneId));
 
-  const filteredReports = allReports.filter(report => {
-    if (report.status !== 'Pending') return false;
+  const filteredReports = visibleReports.filter(report => {
     if (selectedZoneId === 'all') return true;
     const activeZone = zones.find(z => String(z.zone_id) === String(selectedZoneId));
     if (!activeZone || !activeZone.boundaries) return false;
@@ -186,6 +275,59 @@ const Dashboard = () => {
   });
 
   const currentZoneName = selectedZoneId === 'all' ? 'All Zones' : zones.find(z => String(z.zone_id) === String(selectedZoneId))?.zone_name;
+
+  // ==========================================
+  // 🔥 UPDATED: COMBINED PHOTO PROOFS LOGIC
+  // strictly filters for Collector resolved photos only
+  // ==========================================
+  const photoProofs = useMemo(() => {
+    const proofs = [];
+
+    // 1. Add Collected Bins
+    collectedBinsHistory.forEach(bin => {
+      if (bin.photoUrl) {
+        proofs.push({
+          id: `bin-${bin.id}`,
+          rawId: bin.id, 
+          isReport: false, 
+          type: 'Bin Collection',
+          title: bin.binName || 'Collected Bin',
+          photo: bin.photoUrl,
+          timestamp: bin.timestamp,
+          zone: bin.zone || 'Unassigned Zone',
+          collector: bin.collectorName || 'Unknown Collector',
+          driver: null, 
+        });
+      }
+    });
+
+    // 2. Add Reports (STRICTLY ONLY COLLECTOR RESOLVED PHOTOS)
+    allReports.forEach(report => {
+      if (report.resolved_photo_url) { // 🔥 Checks only for the collector's resolution photo
+        let zoneName = 'Unassigned Zone';
+        if (zones && zones.length > 0) {
+          const activeZone = zones.find(z => isPointInPolygon(report.latitude, report.longitude, z.boundaries || z.coordinates));
+          if (activeZone) zoneName = activeZone.zone_name;
+        }
+        
+        proofs.push({
+          id: `rep-${report.report_id}`,
+          rawId: report.report_id, 
+          isReport: true, 
+          type: 'Resolved Report', // Always 'Resolved Report' because we filtered purely for resolved photos
+          title: report.issue_type,
+          photo: `http://localhost:5000${report.resolved_photo_url}`,
+          timestamp: report.resolved_at,
+          zone: zoneName,
+          collector: report.collector_name || 'Unknown Collector',
+          driver: report.driver_name !== 'Assigning Driver...' ? report.driver_name : null
+        });
+      }
+    });
+
+    // Sort combined list by newest first
+    return proofs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+  }, [collectedBinsHistory, allReports, zones]);
 
   // --- 🔥 HOTSPOT ANALYTICS LOGIC ---
   const topZones = useMemo(() => {
@@ -226,7 +368,6 @@ const Dashboard = () => {
         if (nearestBin && minDistance <= 50) {
           const binName = nearestBin.bin_name;
           if (!counts[binName]) {
-            // 🔥 Look up the zone name based on the bin's zone_id
             const parentZone = zones.find(z => String(z.zone_id) === String(nearestBin.zone_id));
             const zoneName = parentZone ? parentZone.zone_name : 'Unassigned Zone';
             
@@ -242,11 +383,11 @@ const Dashboard = () => {
       .map(([name, data]) => ({ name, count: data.total, issues: data.issues, zoneName: data.zoneName }))
       .sort((a, b) => b.count - a.count)
       .slice(0, 4); 
-  }, [allReports, allBins, zones]); // Added zones to dependencies
+  }, [allReports, allBins, zones]); 
   
   // --- REAL DATA KPI CALCULATIONS ---
   const binsCollectedToday = useMemo(() => {
-    return filteredBins.filter(b => b.collection_status === 'Collected').length;
+    return filteredBins.filter(b => b.displayStatus === 'collected').length;
   }, [filteredBins]);
 
   const missedPickupsCount = useMemo(() => {
@@ -315,7 +456,7 @@ const Dashboard = () => {
           {[
             { label: 'Bins Collected', value: binsCollectedToday || '0' },
             { label: 'Missed Pickups', value: missedPickupsCount || '0' },
-            { label: 'Pending Reports', value: filteredReports.length || '0' },
+            { label: 'Pending Reports', value: filteredReports.filter(r => r.status === 'Pending').length || '0' },
             { label: 'Total Zones', value: zones.length || '0' }, 
           ].map((stat, i) => (
             <div key={i} className={d.kpiCard}>
@@ -388,21 +529,36 @@ const Dashboard = () => {
                 })}
 
                 {filteredBins.map((bin) => (
-                  <Marker key={`dash-bin-${bin.bin_id}`} position={[Number(bin.latitude), Number(bin.longitude)]} icon={dashboardBinIcon}>
-                    <Popup><p className="font-bold text-gray-800 text-sm">{bin.bin_name}</p><p className="text-[10px] uppercase font-black">{bin.collection_status || 'Pending'}</p></Popup>
+                  <Marker key={`dash-bin-${bin.bin_id}`} position={[Number(bin.latitude), Number(bin.longitude)]} icon={getBinIcon(bin.displayStatus)}>
+                    <Popup>
+                      <p className="font-bold text-gray-800 text-sm">{bin.bin_name}</p>
+                      <p className="text-[10px] uppercase font-black">{bin.displayStatus}</p>
+                    </Popup>
                   </Marker>
                 ))}
 
                 {filteredReports.map((report) => (
-                  <Marker key={`dash-rep-${report.report_id}`} position={[Number(report.latitude), Number(report.longitude)]} icon={reportIcon}>
-                    <Popup><p className="font-bold text-red-600 text-sm">{report.issue_type}</p><p className="text-[10px] text-gray-500 uppercase">{report.location_address}</p></Popup>
+                  <Marker key={`dash-rep-${report.report_id}`} position={[Number(report.latitude), Number(report.longitude)]} icon={getReportIcon(report.status)}>
+                    <Popup>
+                      <p className="font-bold text-slate-800 text-sm">{report.issue_type}</p>
+                      <p className={`text-[10px] uppercase font-black mb-1 ${
+                        report.status === 'Resolved' ? 'text-slate-500' :
+                        report.status === 'In Progress' ? 'text-orange-500' : 'text-rose-500'
+                      }`}>
+                        {report.status}
+                      </p>
+                      <p className="text-[10px] text-gray-500 uppercase">{report.location_address}</p>
+                    </Popup>
                   </Marker>
                 ))}
              </MapContainer>
           </div>
-          <div className={d.mapLegend}>
-            <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-green-600" /><span>Waste Bins</span></div>
-            <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-red-500" /><span>Citizen Reports</span></div>
+          
+          <div className={`${d.mapLegend} flex-wrap`}>
+            <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-emerald-500" /><span>Pending Bin</span></div>
+            <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-slate-400" /><span>Collected Bin / Resolved Report</span></div>
+            <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-rose-600" /><span>Missed Bin / Pending Report</span></div>
+            <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-orange-500" /><span>Report In Progress</span></div>
             <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-[#2E7D32] opacity-50" /><span>Active Zones</span></div>
           </div>
         </div>
@@ -425,7 +581,6 @@ const Dashboard = () => {
                       onClick={() => navigate('/reports', { state: { autoOpenId: report.report_id } })}
                     >
                       <div className="flex gap-4 items-start flex-1">
-                        {/* IMAGE THUMBNAIL */}
                         <div className="w-20 h-20 rounded-2xl overflow-hidden bg-slate-100 border border-slate-200 shadow-sm flex-shrink-0">
                           {report.photo_evidence_url ? (
                             <img 
@@ -440,12 +595,10 @@ const Dashboard = () => {
                           )}
                         </div>
 
-                        {/* TEXT CONTENT */}
                         <div className="flex-1 pr-2">
                           <div className="flex justify-between items-start w-full">
                             <p className="text-sm font-black text-gray-800 line-clamp-1">{report.issue_type}</p>
                             
-                            {/* Shows Relative time or Full Date with Year/Time based on age */}
                             <p 
                               title={new Date(report.created_at).toLocaleString()} 
                               className="text-[10px] text-gray-400 font-bold uppercase tracking-tighter whitespace-nowrap ml-2 cursor-help"
@@ -454,8 +607,11 @@ const Dashboard = () => {
                             </p>
                           </div>
                           
-                          <p className="text-[10px] font-black text-rose-500 uppercase tracking-tighter mt-0.5">
-                            Reported By: {report.reporter_name || 'Anonymous'}
+                          <p className={`text-[10px] font-black uppercase tracking-tighter mt-0.5 ${
+                             report.status === 'Resolved' ? 'text-slate-400' :
+                             report.status === 'In Progress' ? 'text-orange-500' : 'text-rose-500'
+                          }`}>
+                            Status: {report.status} • By: {report.reporter_name || 'Anonymous'}
                           </p>
 
                           <p className="text-[11px] text-gray-500 line-clamp-1 mt-1 font-medium italic">
@@ -476,19 +632,67 @@ const Dashboard = () => {
             </div>
           </div>
 
+          {/* 🔥 UPDATED PHOTO PROOF CARD WITH REAL DATA & CLICK NAVIGATION */}
           <div className={d.photoCard}>
             <div className="p-5 flex justify-between items-center border-b">
               <h3 className="text-xl font-bold text-gray-700">Photo Proof</h3>
               <div className="flex gap-2">
-                 <button className={ui.btnApprove}>Approve</button>
-                 <button className={ui.btnSeeAllGreen}>See All</button>
+                 <button className={ui.btnSeeAllGreen} onClick={() => navigate('/bins')}>See All</button>
               </div>
             </div>
-            <div className={d.emptyState}>
-              <Inbox size={48} className="text-green-300 mb-2" />
-              <p className={d.emptyText}>No Proof Uploaded</p>
+            
+            <div className="max-h-[460px] overflow-y-auto bg-white">
+              {photoProofs.length > 0 ? (
+                <div className="divide-y divide-gray-50">
+                  {photoProofs.map((proof) => (
+                    <div 
+                      key={proof.id} 
+                      onClick={() => {
+                        if (proof.isReport) {
+                          navigate('/reports', { state: { autoOpenId: proof.rawId } });
+                        } else {
+                          navigate('/bins', { state: { autoOpenId: proof.rawId } });
+                        }
+                      }}
+                      className="p-4 hover:bg-green-50/50 cursor-pointer transition-colors group flex items-start gap-4"
+                    >
+                      <div className="w-20 h-20 rounded-2xl overflow-hidden bg-slate-100 border border-slate-200 shadow-sm flex-shrink-0">
+                        <img src={proof.photo} alt={proof.title} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+                      </div>
+                      <div className="flex-1 pr-2">
+                        <div className="flex justify-between items-start w-full">
+                          <p className="text-sm font-black text-gray-800 line-clamp-1">{proof.title}</p>
+                          <p title={new Date(proof.timestamp).toLocaleString()} className="text-[10px] text-gray-400 font-bold uppercase tracking-tighter whitespace-nowrap ml-2 cursor-help">
+                            {getRelativeTime(proof.timestamp)}
+                          </p>
+                        </div>
+                        <p className={`text-[10px] font-black uppercase tracking-tighter mt-0.5 ${proof.type === 'Bin Collection' ? 'text-emerald-500' : 'text-blue-500'}`}>
+                          {proof.type} • {proof.zone}
+                        </p>
+                        <div className="mt-1 flex flex-col gap-0.5">
+                          <p className="text-[11px] text-gray-500 font-medium line-clamp-1">
+                            <span className="font-bold text-gray-600">Uploaded by:</span> {proof.collector}
+                          </p>
+                          {proof.driver && (
+                            <p className="text-[11px] text-gray-500 font-medium line-clamp-1">
+                              <span className="font-bold text-gray-600">Lead Driver:</span> {proof.driver}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className={d.emptyState}>
+                  <Inbox size={48} className="text-green-300 mb-2" />
+                  <p className={d.emptyText}>No Proof Uploaded</p>
+                </div>
+              )}
             </div>
           </div>
+          {/* --- END PHOTO PROOF --- */}
+
         </div>
 
         {/* --- 🔥 ENHANCED PROFESSIONAL HOTSPOT ANALYTICS CARD --- */}
@@ -580,7 +784,6 @@ const Dashboard = () => {
                       <span className={`flex items-center justify-center shrink-0 w-7 h-7 rounded-lg text-xs font-black transition-colors ${idx === 0 ? 'bg-rose-500 text-white shadow-md shadow-rose-200' : 'bg-slate-100 text-slate-500 group-hover:bg-rose-100 group-hover:text-rose-600'}`}>
                         {idx + 1}
                       </span>
-                      {/* 🔥 NEW: Added Zone Name under the Bin Name */}
                       <div className="flex flex-col truncate">
                         <span className="font-bold text-slate-800 text-[15px] truncate leading-tight">{bin.name}</span>
                         <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest truncate mt-0.5">{bin.zoneName}</span>
@@ -603,7 +806,6 @@ const Dashboard = () => {
             
           </div>
         </div>
-        {/* --- END HOTSPOT ANALYTICS --- */}
         
       </main>
 
@@ -611,14 +813,11 @@ const Dashboard = () => {
         <button onClick={scrollToTop} className={`${ui.backToTop} flex items-center justify-center animate-bounce z-[2000]`}><ArrowUp size={24} /></button>
       )}
 
-      {/* --- 🔥 ENHANCED DRILL-DOWN DETAILS MODAL --- */}
       {hotspotModal.isOpen && hotspotModal.data && (
         <div className="fixed inset-0 z-[6000] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-md animate-in fade-in duration-300">
           <div className="bg-white rounded-[24px] shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-300 border border-white/20">
             
-            {/* Modal Header with Graphic Watermark */}
             <div className={`relative overflow-hidden p-6 ${hotspotModal.type === 'Zone' ? 'bg-gradient-to-br from-indigo-600 to-violet-700' : 'bg-gradient-to-br from-rose-500 to-red-600'}`}>
-              {/* Massive background watermark icon */}
               <div className="absolute -right-8 -top-8 opacity-[0.15] pointer-events-none transform rotate-12">
                 {hotspotModal.type === 'Zone' ? <MapPin size={140} /> : <AlertOctagon size={140} />}
               </div>
@@ -636,7 +835,6 @@ const Dashboard = () => {
                   <h3 className="font-black text-2xl leading-tight text-white drop-shadow-md">
                     {hotspotModal.data.name}
                   </h3>
-                  {/* 🔥 NEW: Added Zone label inside the Bin Modal header */}
                   {hotspotModal.type === 'Waste Bin' && hotspotModal.data.zoneName && (
                     <p className="text-[13px] font-semibold text-white/80 mt-1.5 flex items-center gap-1.5">
                       <MapPin size={14} className="opacity-70" /> {hotspotModal.data.zoneName}
@@ -653,7 +851,6 @@ const Dashboard = () => {
               </div>
             </div>
             
-            {/* Modal Body */}
             <div className="p-7">
               <div className="flex items-center justify-between mb-6 pb-5 border-b border-slate-100">
                 <div>
@@ -672,11 +869,10 @@ const Dashboard = () => {
                 
                 <div className="space-y-4">
                   {(() => {
-                    // Calculate the max count to dynamically size the progress bars
                     const maxCount = Math.max(...Object.values(hotspotModal.data.issues));
                     
                     return Object.entries(hotspotModal.data.issues)
-                      .sort((a, b) => b[1] - a[1]) // Sort highest to lowest
+                      .sort((a, b) => b[1] - a[1]) 
                       .map(([issueName, issueCount], i) => {
                         const percentage = Math.round((issueCount / maxCount) * 100);
                         
@@ -686,14 +882,11 @@ const Dashboard = () => {
                               <span className="font-bold text-slate-700 text-[13px]">{issueName}</span>
                               <span className="font-black text-slate-900 text-sm">{issueCount}</span>
                             </div>
-                            {/* Progress Bar Track */}
                             <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
-                               {/* Progress Bar Fill */}
                                <div 
                                  className={`h-full rounded-full transition-all duration-1000 ease-out relative overflow-hidden ${hotspotModal.type === 'Zone' ? 'bg-indigo-500' : 'bg-rose-500'}`} 
                                  style={{ width: `${percentage}%` }}
                                >
-                                  {/* Glossy overlay effect on the bar */}
                                   <div className="absolute top-0 left-0 right-0 bottom-0 bg-gradient-to-b from-white/20 to-transparent rounded-full" />
                                </div>
                             </div>
@@ -705,7 +898,6 @@ const Dashboard = () => {
               </div>
             </div>
             
-            {/* Modal Footer */}
             <div className="p-5 border-t border-slate-100 bg-slate-50/50 flex justify-end">
               <button 
                 onClick={() => setHotspotModal({ isOpen: false, type: '', data: null })}
@@ -717,7 +909,6 @@ const Dashboard = () => {
           </div>
         </div>
       )}
-      {/* --- END MODAL --- */}
 
     </div>
   );
