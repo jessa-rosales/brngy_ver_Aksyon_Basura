@@ -15,28 +15,27 @@ const createBin = async (bin_name, zone_id, latitude, longitude, bin_address) =>
 
 const getBinsByZoneId = async (zoneId) => {
   const query = `
-    SELECT bin_id, bin_name, bin_address, collection_status, 
-           ST_Y(location::geometry) as latitude, 
-           ST_X(location::geometry) as longitude 
-    FROM waste_bins WHERE zone_id = $1
+    SELECT bin_id, bin_name, bin_address, collection_status, ST_Y(location::geometry) as latitude, ST_X(location::geometry) as longitude 
+    FROM waste_bins 
+    WHERE zone_id = $1 AND is_archived = false
   `;
   const result = await pool.query(query, [zoneId]);
   return result.rows;
 };
 
+// Change this to perform a Soft Delete instead of a Hard Delete
 const deleteBin = async (binId) => {
-  const result = await pool.query("DELETE FROM waste_bins WHERE bin_id = $1 RETURNING *", [binId]);
+  const query = "UPDATE waste_bins SET is_archived = true WHERE bin_id = $1 RETURNING *";
+  const result = await pool.query(query, [binId]);
   return result.rowCount > 0;
 };
 
 
 const getAllBins = async () => {
   const query = `
-    SELECT bin_id, bin_name, bin_address, collection_status, zone_id,
-           ST_Y(location::geometry) as latitude, 
-           ST_X(location::geometry) as longitude,
-           last_collected_timestamp AS "collectedAt" -- para ni mo balik og pending after 11:59 pm
+    SELECT bin_id, bin_name, bin_address, collection_status, zone_id, ST_Y(location::geometry) as latitude, ST_X(location::geometry) as longitude, last_collected_timestamp AS "collectedAt" 
     FROM waste_bins
+    WHERE is_archived = false
   `;
   const result = await pool.query(query);
   return result.rows;
