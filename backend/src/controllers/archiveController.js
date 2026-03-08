@@ -77,10 +77,19 @@ const archiveController = {
             ORDER BY cr.timestamp DESC;
           `;
           break;
-
-        default:
-          return res.status(400).json({ message: "Invalid category" });
-      }
+          // ✅ Add this new case for fetching archived waste bins
+          case "waste_bins":
+            query = `
+              SELECT w.*, z.zone_name 
+              FROM waste_bins w 
+              LEFT JOIN zones z ON w.zone_id = z.zone_id 
+              WHERE w.is_archived = true 
+              ORDER BY w.bin_id ASC
+            `;
+            break;
+          default:
+            return res.status(400).json({ message: "Invalid category" });
+        }
 
       const result = await pool.query(query);
 
@@ -120,7 +129,12 @@ const archiveController = {
       case "zones": table = "zones"; pk = "zone_id"; break;
       case "announcements": table = "announcements"; pk = "announcement_id"; break;
       case "users": table = "users"; pk = "user_id"; break;
-      case "bins": table = "collection_records"; pk = "record_id"; break; 
+      case "bins": table = "collection_records"; pk = "record_id"; break;
+      // ✅ Add this new case for restoring waste bins
+      case "waste_bins": 
+        table = "waste_bins"; 
+        pk = "bin_id"; 
+        break;
       default: return res.status(400).json({ message: "Invalid category" });
     }
 
