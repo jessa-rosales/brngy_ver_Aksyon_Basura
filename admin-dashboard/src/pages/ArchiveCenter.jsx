@@ -3,7 +3,7 @@ import {
   ArrowLeft, RotateCcw, Search, MessageSquare, 
   ClipboardList, Map, Megaphone, Users, Trash2,
   RefreshCw, Bell, ArrowUp, Truck, Clock, Calendar, 
-  MapPin, AlertTriangle, CheckCircle, Trash, LayoutGrid, List, User, RefreshCcw
+  MapPin, AlertTriangle, CheckCircle, Trash, LayoutGrid, List, User, RefreshCcw, FileText
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { design } from '../styles/design';
@@ -30,7 +30,8 @@ const ArchiveCenter = () => {
     { id: 'reports', label: 'Citizen Reports', icon: MessageSquare },
     { id: 'tasks', label: 'Assigned Tasks', icon: ClipboardList },
     { id: 'vehicles', label: 'Fleet Assets', icon: Truck },
-    { id: 'bins', label: 'Collection Records', icon: Trash2 }, 
+    { id: 'bins', label: 'Collection Records', icon: FileText }, 
+    { id: 'waste_bins', label: 'Waste Bins', icon: Trash2 }, 
     { id: 'zones', label: 'Zones', icon: Map },
     { id: 'announcements', label: 'Announcements', icon: Megaphone },
     { id: 'users', label: 'Users', icon: Users },
@@ -67,7 +68,7 @@ const ArchiveCenter = () => {
 
   // EXTRACTORS FOR DIFFERENT DATABASE SCHEMAS
   const getItemId = (item) => item.id || item.report_id || item.task_id || item.vehicle_id || item.bin_id || item.zone_id || item.announcement_id || item.user_id;
-  const getItemName = (item) => item.title || item.zone_name || item.vehicle_name || item.binName || item.name || (item.first_name ? `${item.first_name} ${item.last_name}` : null) || item.issue_type || item.description || 'Unnamed Item';
+  const getItemName = (item) => item.title || item.zone_name || item.vehicle_name || item.binName || item.bin_name || item.name || (item.first_name ? `${item.first_name} ${item.last_name}` : null) || item.issue_type || item.description || 'Unnamed Item';
 
   const handleRestore = async (id) => {
     try {
@@ -343,6 +344,37 @@ const ArchiveCenter = () => {
     </div>
   );
 
+  const renderWasteBins = () => (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      {filteredData.map((bin) => (
+        <div key={bin.bin_id} className="border-2 border-slate-200 rounded-2xl p-5 bg-slate-50 opacity-80 hover:opacity-100 transition-all relative group">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 rounded-xl bg-slate-200 flex items-center justify-center border border-slate-300">
+              <Trash2 size={20} className="text-slate-500" />
+            </div>
+            <div>
+              <h4 className="font-bold text-slate-700 text-lg line-through">{bin.bin_name}</h4>
+              <p className="text-xs text-slate-400 font-medium">Bin ID: #{bin.bin_id}</p>
+            </div>
+          </div>
+          <div className="space-y-3 mb-6">
+            <div className="flex items-center gap-3 text-slate-400 text-sm">
+              <Map size={16} />
+              <span>Zone: <strong className="text-slate-600">{bin.zone_name || 'Unassigned'}</strong></span>
+            </div>
+            <div className="w-full h-px bg-slate-200" />
+          </div>
+          <button 
+            onClick={() => handleRestore(bin.bin_id)} 
+            className="w-full flex items-center justify-center gap-2 py-3 bg-emerald-100 text-emerald-700 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-emerald-600 hover:text-white transition-all shadow-sm"
+          >
+            <RotateCcw size={14} /> Restore Bin
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+
   const renderBins = () => (
     <div className="flex flex-col gap-4">
       {/* Bin View Toggle (Only visible on Bins tab) */}
@@ -508,7 +540,7 @@ const ArchiveCenter = () => {
     if (filteredData.length === 0) return (
       <div className="flex flex-col items-center justify-center py-24 bg-white rounded-[40px] border-2 border-dashed border-emerald-200">
         <Trash2 size={48} className="text-emerald-200 mb-4" />
-        <p className="text-emerald-800 font-black uppercase tracking-widest text-xs">No archived {activeTab} records found</p>
+        <p className="text-emerald-800 font-black uppercase tracking-widest text-xs">No archived {activeTab.replace('_', ' ')} records found</p>
       </div>
     );
 
@@ -519,7 +551,8 @@ const ArchiveCenter = () => {
       case 'tasks': return renderTasks();
       case 'vehicles': return renderVehicles();
       case 'zones': return renderZones(); 
-      case 'bins': return renderBins();   
+      case 'bins': return renderBins();
+      case 'waste_bins': return renderWasteBins(); 
       default: return null;
     }
   };
@@ -536,7 +569,7 @@ const ArchiveCenter = () => {
             <Search className="absolute left-3 top-2.5 text-gray-500" size={18} />
             <input 
               type="text" 
-              placeholder={`Search archived ${activeTab}...`} 
+              placeholder={`Search archived ${activeTab.replace('_', ' ')}...`} 
               className={l.searchBox} 
               value={searchTerm} 
               onChange={(e) => setSearchTerm(e.target.value)} 
@@ -578,12 +611,12 @@ const ArchiveCenter = () => {
         </div>
 
         {/* TAB NAVIGATION */}
-        <div className="flex flex-wrap gap-2 p-1.5 bg-white/60 backdrop-blur-md rounded-[24px] w-fit border border-emerald-100/50 shadow-sm">
+        <div className="flex overflow-x-auto gap-2 p-1.5 bg-white/60 backdrop-blur-md rounded-[24px] w-full lg:w-fit max-w-full border border-emerald-100/50 shadow-sm custom-scrollbar [&::-webkit-scrollbar]:hidden">
           {tabs.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 px-6 py-3 rounded-[20px] text-[10px] font-black uppercase tracking-widest transition-all ${
+              className={`flex items-center shrink-0 whitespace-nowrap gap-2 px-4 py-3 rounded-[20px] text-[10px] font-black uppercase tracking-widest transition-all ${
                 activeTab === tab.id 
                 ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-200' 
                 : 'text-emerald-800 hover:bg-emerald-50'
