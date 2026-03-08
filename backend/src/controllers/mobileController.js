@@ -48,7 +48,7 @@ const getMobileAssignment = async (req, res) => {
           wb.last_collected_timestamp, 
           EXISTS(SELECT 1 FROM collection_records cr WHERE cr.bin_id = wb.bin_id AND cr.task_id = $2) as evidence_submitted
         FROM waste_bins wb 
-        WHERE wb.zone_id = $1
+        WHERE wb.zone_id = $1 AND wb.is_archived = false
       `;
       const binsResult = await pool.query(binsQuery, [assignment.zone_id, assignment.task_id]);
       return {
@@ -319,7 +319,7 @@ const getActiveTrackingRoutes = async (req, res) => {
                 FROM waste_bins wb
                 LEFT JOIN collection_records cr ON cr.bin_id = wb.bin_id AND cr.task_id = $2
                 LEFT JOIN users c ON cr.personnel_id = c.user_id
-                WHERE wb.zone_id = $1
+                WHERE wb.zone_id = $1 AND wb.is_archived = false
             `;
             // Note: If no active task_id exists, $2 is null, which just means no collection_records will join
             const binsResult = await pool.query(binsQuery, [zone.zone_id, zone.task_id || null]);
