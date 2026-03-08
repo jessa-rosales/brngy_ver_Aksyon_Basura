@@ -50,7 +50,16 @@ const ZoneManagement = () => {
 
   // ARCHIVE CENTER STATES
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
-  const [zoneToArchive, setZoneToArchive] = useState(null);
+  
+  // ✅ NEW: Consolidate confirmation state so we can use one dialog for both Zones and Bins
+  const [confirmConfig, setConfirmConfig] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    confirmText: '',
+    type: 'warning',
+    onConfirm: () => {}
+  });
 
   const scrollContainerRef = useRef(null);
   const { layout: l, dashboard: d, ui } = design;
@@ -100,27 +109,25 @@ const ZoneManagement = () => {
 
   // Archiving
   const handleDeleteZone = (id) => {
-    setZoneToArchive(id);
-    setIsConfirmOpen(true);
-  };
-
-  const handleConfirmArchive = async () => {
-    try {
-      //  Check if it actually returns true
-      const success = await zoneService.deleteZone(zoneToArchive); 
-      
-      if (!success) {
-         throw new Error("Server rejected the archive request");
+    // ✅ Use the new unified confirm config
+    setConfirmConfig({
+      isOpen: true,
+      title: "Archive Zone?",
+      message: "This zone will be hidden from the map and moved to the Archive Center. All associated bins will remain in records.",
+      confirmText: "Archive Now",
+      type: "warning",
+      onConfirm: async () => {
+        try {
+          const success = await zoneService.deleteZone(id); 
+          if (!success) throw new Error("Server rejected the archive request");
+          
+          refreshAllData();
+          triggerNotify("Zone moved to Archive Center", "warning");
+        } catch (err) {
+          triggerNotify("Failed to archive zone", "error"); 
+        }
       }
-      
-      refreshAllData();
-      setIsConfirmOpen(false);
-      triggerNotify("Zone moved to Archive Center", "warning");
-    } catch (err) {
-      //it will properly show an error if it fails!
-      setIsConfirmOpen(false);
-      triggerNotify("Failed to archive zone", "error"); 
-    }
+    });
   };
 
   /* BIN ACTIONS */
@@ -147,14 +154,23 @@ const ZoneManagement = () => {
     }
   };
 
-  const handleDeleteBin = async (binId) => {
-    if (!window.confirm("Delete this bin?")) return;
-    const res = await zoneService.deleteBin(binId);
-    if (res.ok) {
-      fetchBinsForZone(activeZoneForBin.zone_id);
-      refreshAllData();
-      triggerNotify("Bin removed.", "error");
-    }
+  const handleDeleteBin = (binId) => {
+    // ✅ Replaced window.confirm with the unified confirm config
+    setConfirmConfig({
+      isOpen: true,
+      title: "Archive Bin?",
+      message: "This bin will be removed from the active map and moved to the Archive Center.",
+      confirmText: "Archive Bin",
+      type: "warning",
+      onConfirm: async () => {
+        const res = await zoneService.deleteBin(binId);
+        if (res.ok) {
+          fetchBinsForZone(activeZoneForBin.zone_id);
+          refreshAllData();
+          triggerNotify("Bin moved to Archive Center.", "warning");
+        }
+      }
+    });
   };
 
   /* UI LOGIC */
@@ -287,7 +303,7 @@ const ZoneManagement = () => {
                         <div className="flex items-center gap-3 text-gray-500 text-sm">
                             <Trash size={16} className="text-gray-400" />
                             <span>
-                                Bins: <strong className="text-gray-700">{zone.bin_count || 0}</strong> in the area
+                                Bins: <strong className="text-gray-700">{allBins.filter(bin => bin.zone_id === zone.zone_id).length}</strong> in the area
                             </span>
                         </div>
                         <div className="w-full h-px bg-gray-100" />
@@ -314,10 +330,11 @@ const ZoneManagement = () => {
                     </div>
 
                     <button 
+                        title="Archive Zone"
                         onClick={() => handleDeleteZone(zone.zone_id)}
-                        className="absolute top-4 right-4 p-2 text-red-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all opacity-0 group-hover:opacity-100 cursor-pointer"
+                        className="absolute top-4 right-4 p-2 text-amber-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-all opacity-0 group-hover:opacity-100 cursor-pointer"
                     >
-                        <Trash2 size={16} />
+                        <Archive size={16} />
                     </button>
                 </div>
                 ))
@@ -361,15 +378,15 @@ const ZoneManagement = () => {
         existingBins={zoneBins}
       />
 
-      {/* ARCHIVE CONFIRMATION */}
+      {/* ✅ UNIFIED ARCHIVE CONFIRMATION */}
       <ConfirmDialog 
-        isOpen={isConfirmOpen}
-        onClose={() => setIsConfirmOpen(false)}
-        onConfirm={handleConfirmArchive}
-        title="Archive Zone?"
-        message="This zone will be hidden from the map and moved to the Archive Center. All associated bins will remain in records."
-        confirmText="Archive Now"
-        type="warning"
+        isOpen={confirmConfig.isOpen}
+        onClose={() => setConfirmConfig({ ...confirmConfig, isOpen: false })}
+        onConfirm={confirmConfig.onConfirm}
+        title={confirmConfig.title}
+        message={confirmConfig.message}
+        confirmText={confirmConfig.confirmText}
+        type={confirmConfig.type}
       />
 
       <Notification 
