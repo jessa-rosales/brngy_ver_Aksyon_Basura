@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -6,7 +6,7 @@ import {
   MapPin, Users, BarChart3, Zap, Shield, Bell,
   Facebook, Twitter, Linkedin, Instagram, Mail, Phone, Clock,
   Truck, ClipboardCheck, Globe, Sparkles, Heart, Quote,
-  ArrowUp, ChevronLeft, ChevronRight, Trash2, AlertCircle 
+  ArrowUp, ChevronLeft, ChevronRight, Trash2, AlertCircle, ChevronDown 
 } from 'lucide-react';
 
 // --- MAP IMPORTS ---
@@ -183,6 +183,10 @@ const LandingPage = () => {
   const [feedbackIndex, setFeedbackIndex] = useState(0);
   const [showBackToTop, setShowBackToTop] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
+  
+  // NEW STATES FOR SMART NAVBAR
+  const [showNav, setShowNav] = useState(true);
+  const lastScrollY = useRef(0);
 
   // --- MAP STATE ---
   const [zones, setZones] = useState([]);
@@ -288,8 +292,8 @@ const LandingPage = () => {
 
   const workflows = {
     Citizens: [
-      { step: "01", title: "Register", desc: "Sign up to help keep our barangay clean.", img: cregister2 },
-      { step: "02", title: "Login", desc: "Log in to see your dashboard and track your good deeds.", img: clogin1 },
+      { step: "01", title: "Register", desc: "Join the movement. Sign up easily to become an active participant in your barangay's waste management.", img: cregister2 },
+      { step: "02", title: "Login", desc: "Securely access your personalized eco-dashboard. Your account keeps track of your community contributions.", img: clogin1 },
       { 
         step: "03", 
         title: "Track", 
@@ -306,19 +310,19 @@ const LandingPage = () => {
       { 
         step: "04", 
         title: "Feed", 
-        desc: "Look at garbage issues reported by your neighbors. Vote on what needs to be fixed first.", 
+        desc: "Look at garbage issues reported by your neighbors. Help prioritize critical issues so they get addressed faster.", 
         img: cfeed4,
         startNumber: 1,
         features: [
           "Sort reports by what's new, being fixed, or done.",
           "Tap 'Need Attention' to vote on urgent problems.",
-          "Get directions to where the problem is located."
+          "Tap Navigate to get directions straight to the reported location if you want to view"
         ]
       },
       { 
         step: "05", 
         title: "Report", 
-        desc: "Tell us where there is uncollected garbage by dropping a pin and sending a photo.", 
+        desc: "Tell us where there is uncollected garbage or illegal dumping by dropping a pin and sending a photo.", 
         img: creport5,
         startNumber: 1,
         features: [
@@ -512,12 +516,26 @@ const LandingPage = () => {
     { name: "Marcus Tan", role: "Eco-Volunteer", text: "I love the transparency. Knowing exactly where the collection trucks are helps us coordinate our community cleanup drives perfectly." }
   ];
 
+  // UPDATED SCROLL HANDLER
   useEffect(() => {
     const handleScroll = () => {
-      setShowBackToTop(window.scrollY > 500);
-      setIsScrolled(window.scrollY > 50);
+      const currentScrollY = window.scrollY;
+      
+      setShowBackToTop(currentScrollY > 500);
+      setIsScrolled(currentScrollY > 50);
+
+      // Smart navbar logic: Hide when scrolling down, show when scrolling up
+      if (currentScrollY > lastScrollY.current && currentScrollY > 100) {
+        setShowNav(false);
+      } else {
+        setShowNav(true);
+      }
+      
+      lastScrollY.current = currentScrollY;
     };
-    window.addEventListener('scroll', handleScroll);
+    
+    // Using passive: true for better scroll performance
+    window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
@@ -564,7 +582,7 @@ const LandingPage = () => {
           >
             <motion.div initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} className="relative mb-8">
               <div className="w-32 h-32 md:w-40 md:h-40 bg-white border-4 border-emerald-500 rounded-full overflow-hidden flex items-center justify-center shadow-[0_0_50px_rgba(16,185,129,0.3)] pulse-glow">
-                <img src={logoImg} alt="Logo" className="w-full h-full object-cover" />
+                <img src={logoImg} alt="Logo" className="w-full h-full object-cover scale-125" />
               </div>
               <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 2, ease: "linear" }} className="absolute -inset-4 border-t-2 border-emerald-500 rounded-full" />
             </motion.div>
@@ -613,11 +631,12 @@ const LandingPage = () => {
           )}
         </AnimatePresence>
 
-        <nav className={`fixed top-0 left-0 w-full z-[90] transition-all duration-500 px-6 md:px-12 py-5 ${isScrolled ? 'bg-[#f4fbf7]/95 backdrop-blur-lg border-b border-emerald-100 py-4 shadow-sm' : 'bg-transparent py-8'}`}>
+        {/* UPDATED NAV TAG WITH TRANSFORM CLASSES */}
+        <nav className={`fixed top-0 left-0 w-full z-[90] transition-transform duration-300 px-6 md:px-12 py-5 ${showNav ? 'translate-y-0' : '-translate-y-full'} ${isScrolled ? 'bg-[#f4fbf7]/95 backdrop-blur-lg border-b border-emerald-100 py-4 shadow-sm' : 'bg-transparent py-8'}`}>
           <div className="max-w-7xl mx-auto flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 md:w-16 md:h-16 bg-white border-2 border-emerald-500 rounded-full flex items-center justify-center overflow-hidden active:scale-95 transition-transform shadow-sm">
-                <img src={logoImg} alt="Logo" className="w-full h-full object-cover" />
+                <img src={logoImg} alt="Logo" className="w-full h-full object-cover scale-125" />
               </div>
               <span className={`text-lg md:text-xl font-black tracking-tighter uppercase transition-colors ${isScrolled ? 'text-emerald-950' : 'text-white'}`}>Aksyon <span className="text-emerald-500">Basura</span></span>
             </div>
@@ -647,7 +666,15 @@ const LandingPage = () => {
               <p className="text-base md:text-xl text-emerald-50 font-medium mb-12 max-w-2xl">Empowering Barangay Nazareth with real-time tracking, and citizen engagement tools to build cleaner, smarter, and more sustainable communities.</p>
               <div className="flex flex-col sm:flex-row items-center gap-5">
                 <button className="w-full sm:w-auto px-12 py-5 bg-emerald-600 text-white font-black rounded-2xl flex items-center justify-center gap-3 hover:bg-emerald-500 transition-all text-sm uppercase shadow-2xl shadow-emerald-600/20 active:scale-95">Go to App Now! <ArrowRight size={20} /></button>
-                <button className="w-full sm:w-auto px-10 py-5 border-2 border-white/30 text-white font-black rounded-2xl flex items-center justify-center gap-3 hover:bg-white/10 transition-all text-sm uppercase active:scale-95"><PlayCircle size={22} className="text-emerald-400" /> How it works</button>
+                <button 
+                  onClick={() => {
+                    const section = document.getElementById('how-it-works');
+                    if (section) section.scrollIntoView({ behavior: 'smooth' });
+                  }}
+                  className="w-full sm:w-auto px-10 py-5 border-2 border-white/30 text-white font-black rounded-2xl flex items-center justify-center gap-3 hover:bg-white/10 transition-all text-sm uppercase active:scale-95"
+                >
+                  <PlayCircle size={22} className="text-emerald-400" /> How it works
+                </button>
               </div>
             </motion.div>
           </div>
@@ -662,16 +689,25 @@ const LandingPage = () => {
               <h2 className="text-emerald-600 font-black uppercase tracking-[0.4em] text-xs mb-4">Eco-System</h2>
               <h3 className="text-4xl md:text-7xl font-black uppercase tracking-tighter leading-[0.9] text-emerald-950">Next-Gen Tools for <br /> <span className="text-emerald-950/30">Urban Sanitation</span></h3>
             </motion.div>
+            
             <motion.div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" variants={staggerContainer} initial="initial" whileInView="whileInView" viewport={{ once: true, margin: "-50px" }}>
               {featuresList.map((f, index) => (
                 <motion.div key={index} variants={fadeInScroll} whileHover={{ y: -8 }} className="group relative p-10 rounded-[32px] bg-white border border-emerald-100 shadow-sm hover:shadow-lg hover:shadow-emerald-900/5 hover:border-emerald-300 transition-all duration-500 overflow-hidden">
-                  <div className="absolute inset-0 bg-gradient-to-br from-[#f4fbf7] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
+                  
+                  {/* --- LOW OPACITY BACKGROUND ICON --- */}
+                  <div className="absolute -bottom-8 -right-8 opacity-[0.08] group-hover:opacity-[0.11] transition-all duration-500 transform group-hover:scale-110 pointer-events-none z-0">
+                    {React.cloneElement(f.icon, { size: 160, className: "text-emerald-900" })}
+                  </div>
+
+                  <div className="absolute inset-0 bg-gradient-to-br from-[#f4fbf7] to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 z-0" />
+                  
                   <div className="relative z-10">
                     <div className="mb-10 p-4 bg-emerald-50 w-fit rounded-2xl text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white transition-all duration-300 shadow-sm">{f.icon}</div>
                     <h4 className="text-2xl font-black mb-4 uppercase tracking-tight text-emerald-950 group-hover:text-emerald-700 transition-colors">{f.title}</h4>
                     <p className="text-slate-600 text-sm leading-relaxed font-medium transition-colors">{f.desc}</p>
                   </div>
-                  <div className="absolute -bottom-4 -right-4 w-24 h-24 bg-emerald-50 rounded-full blur-2xl group-hover:bg-emerald-100 transition-all duration-500" />
+                  
+                  <div className="absolute -bottom-4 -right-4 w-24 h-24 bg-emerald-50 rounded-full blur-2xl group-hover:bg-emerald-100 transition-all duration-500 z-0 pointer-events-none" />
                 </motion.div>
               ))}
             </motion.div>
@@ -691,47 +727,47 @@ const LandingPage = () => {
             </motion.div>
 
             {/* --- SEPARATED STATS ABOVE THE MAP --- */}
-            <motion.div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8" {...fadeInScroll}>
-              <div className="bg-[#f4fbf7] border border-emerald-100 rounded-3xl p-6 shadow-sm flex items-center justify-between">
+            <motion.div className="grid grid-cols-1 sm:grid-cols-3 gap-4 md:gap-6 mb-6" {...fadeInScroll}>
+              <div className="bg-[#f4fbf7] border border-emerald-100 rounded-2xl md:rounded-3xl p-4 md:p-6 shadow-sm flex items-center justify-between">
                  <div>
-                   <p className="text-xs font-black text-emerald-600/70 uppercase tracking-widest mb-1">
+                   <p className="text-[10px] md:text-xs font-black text-emerald-600/70 uppercase tracking-widest mb-1">
                      {selectedZoneId === 'all' ? 'Active Zones' : 'Selected Zone'}
                    </p>
-                   <h4 className="text-4xl font-black text-emerald-950">
+                   <h4 className="text-2xl md:text-4xl font-black text-emerald-950">
                      {selectedZoneId === 'all' ? zones.length : 1}
                    </h4>
                  </div>
-                 <div className="w-14 h-14 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600">
-                    <MapPin size={24} />
+                 <div className="w-10 h-10 md:w-14 md:h-14 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600">
+                    <MapPin size={20} className="md:w-6 md:h-6" />
                  </div>
               </div>
 
-              <div className="bg-[#f4fbf7] border border-emerald-100 rounded-3xl p-6 shadow-sm flex items-center justify-between">
+              <div className="bg-[#f4fbf7] border border-emerald-100 rounded-2xl md:rounded-3xl p-4 md:p-6 shadow-sm flex items-center justify-between">
                  <div>
-                   <p className="text-xs font-black text-emerald-600/70 uppercase tracking-widest mb-1">Total Bins</p>
-                   <h4 className="text-4xl font-black text-emerald-950">{filteredBins.length}</h4>
+                   <p className="text-[10px] md:text-xs font-black text-emerald-600/70 uppercase tracking-widest mb-1">Total Bins</p>
+                   <h4 className="text-2xl md:text-4xl font-black text-emerald-950">{filteredBins.length}</h4>
                  </div>
-                 <div className="w-14 h-14 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600">
-                    <Trash2 size={24} />
+                 <div className="w-10 h-10 md:w-14 md:h-14 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600">
+                    <Trash2 size={20} className="md:w-6 md:h-6" />
                  </div>
               </div>
 
-              <div className="bg-rose-50 border border-rose-100 rounded-3xl p-6 shadow-sm flex items-center justify-between relative overflow-hidden">
+              <div className="bg-rose-50 border border-rose-100 rounded-2xl md:rounded-3xl p-4 md:p-6 shadow-sm flex items-center justify-between relative overflow-hidden">
                  <div>
-                   <p className="text-xs font-black text-rose-600/70 uppercase tracking-widest mb-1">Live Reports</p>
+                   <p className="text-[10px] md:text-xs font-black text-rose-600/70 uppercase tracking-widest mb-1">Live Reports</p>
                    <div className="flex items-center gap-3">
-                     <span className="relative flex h-3.5 w-3.5">
+                     <span className="relative flex h-3 md:h-3.5 w-3 md:w-3.5">
                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
-                       <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-rose-500"></span>
+                       <span className="relative inline-flex rounded-full h-3 md:h-3.5 w-3 md:w-3.5 bg-rose-500"></span>
                      </span>
-                     <h4 className="text-4xl font-black text-rose-950">{filteredReports.length}</h4>
+                     <h4 className="text-2xl md:text-4xl font-black text-rose-950">{filteredReports.length}</h4>
                    </div>
                  </div>
-                 <div className="w-14 h-14 rounded-full bg-rose-100 flex items-center justify-center text-rose-600 relative z-10">
-                    <AlertCircle size={24} />
+                 <div className="w-10 h-10 md:w-14 md:h-14 rounded-full bg-rose-100 flex items-center justify-center text-rose-600 relative z-10">
+                    <AlertCircle size={20} className="md:w-6 md:h-6" />
                  </div>
                  <div className="absolute -right-4 -bottom-4 opacity-10">
-                    <AlertCircle size={100} />
+                    <AlertCircle size={80} className="md:w-[100px] md:h-[100px]" />
                  </div>
               </div>
             </motion.div>
@@ -739,30 +775,53 @@ const LandingPage = () => {
             {/* --- MAP SECTION WITH SIDEBAR --- */}
             <motion.div className="flex flex-col lg:flex-row gap-6 mb-6" {...fadeInScroll}>
               
-              {/* Left Sidebar for Zone Selection */}
-              <div className="w-full lg:w-72 flex flex-col gap-2 max-h-[250px] lg:max-h-[550px] overflow-y-auto pr-2" style={{ scrollbarWidth: 'thin' }}>
-                <button 
-                  onClick={() => setSelectedZoneId('all')}
-                  className={`p-4 rounded-2xl text-left transition-all border ${selectedZoneId === 'all' ? 'bg-emerald-600 text-white shadow-md border-emerald-500' : 'bg-slate-50 text-slate-700 border-slate-100 hover:bg-emerald-50 hover:border-emerald-200'}`}
-                >
-                  <span className="font-bold block text-[15px]">All Zones</span>
-                  <span className={`text-[11px] font-semibold mt-1 block ${selectedZoneId === 'all' ? 'text-emerald-100' : 'text-slate-400'}`}>View entire city map</span>
-                </button>
+              {/* Left Sidebar for Zone Selection - DROPDOWN ON MOBILE */}
+              <div className="w-full lg:w-72 flex flex-col gap-3 lg:max-h-[550px]">
                 
-                {zones.map(zone => (
-                  <button 
-                    key={zone.zone_id}
-                    onClick={() => setSelectedZoneId(zone.zone_id)}
-                    className={`p-4 rounded-2xl text-left transition-all border ${String(selectedZoneId) === String(zone.zone_id) ? 'bg-emerald-600 text-white shadow-md border-emerald-500' : 'bg-slate-50 text-slate-700 border-slate-100 hover:bg-emerald-50 hover:border-emerald-200'}`}
+                {/* Mobile Dropdown */}
+                <div className="block lg:hidden relative w-full">
+                  <select 
+                    value={selectedZoneId}
+                    onChange={(e) => setSelectedZoneId(e.target.value)}
+                    className="w-full appearance-none bg-white border-2 border-emerald-100 rounded-2xl py-4 pl-5 pr-12 text-emerald-950 font-bold text-[15px] shadow-sm focus:outline-none focus:border-emerald-500 transition-colors"
                   >
-                    <span className="font-bold block text-[15px]">{zone.zone_name}</span>
-                    <span className={`text-[11px] font-semibold mt-1 block uppercase tracking-wider ${String(selectedZoneId) === String(zone.zone_id) ? 'text-emerald-200' : 'text-slate-400'}`}>Focus Zone</span>
+                    <option value="all">All Zones - View entire city map</option>
+                    {zones.map(zone => (
+                      <option key={zone.zone_id} value={zone.zone_id}>
+                        {zone.zone_name}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-emerald-600">
+                    <ChevronDown size={20} />
+                  </div>
+                </div>
+
+                {/* Desktop Sidebar */}
+                <div className="hidden lg:flex flex-col gap-2 overflow-y-auto pr-2" style={{ scrollbarWidth: 'thin' }}>
+                  <button 
+                    onClick={() => setSelectedZoneId('all')}
+                    className={`p-4 rounded-2xl text-left transition-all border ${selectedZoneId === 'all' ? 'bg-emerald-600 text-white shadow-md border-emerald-500' : 'bg-slate-50 text-slate-700 border-slate-100 hover:bg-emerald-50 hover:border-emerald-200'}`}
+                  >
+                    <span className="font-bold block text-[15px]">All Zones</span>
+                    <span className={`text-[11px] font-semibold mt-1 block ${selectedZoneId === 'all' ? 'text-emerald-100' : 'text-slate-400'}`}>View entire city map</span>
                   </button>
-                ))}
+                  
+                  {zones.map(zone => (
+                    <button 
+                      key={zone.zone_id}
+                      onClick={() => setSelectedZoneId(zone.zone_id)}
+                      className={`p-4 rounded-2xl text-left transition-all border ${String(selectedZoneId) === String(zone.zone_id) ? 'bg-emerald-600 text-white shadow-md border-emerald-500' : 'bg-slate-50 text-slate-700 border-slate-100 hover:bg-emerald-50 hover:border-emerald-200'}`}
+                    >
+                      <span className="font-bold block text-[15px]">{zone.zone_name}</span>
+                      <span className={`text-[11px] font-semibold mt-1 block uppercase tracking-wider ${String(selectedZoneId) === String(zone.zone_id) ? 'text-emerald-200' : 'text-slate-400'}`}>Focus Zone</span>
+                    </button>
+                  ))}
+                </div>
               </div>
 
-              {/* Map Container */}
-              <div className="flex-1 h-[450px] md:h-[550px] w-full rounded-[40px] overflow-hidden border-2 border-emerald-100 shadow-[0_20px_50px_rgba(16,185,129,0.10)] relative" style={{ zIndex: 0 }}>
+              {/* Map Container - FIXED FOR MOBILE */}
+              <div className="w-full lg:flex-1 h-[450px] min-h-[450px] lg:h-[550px] shrink-0 rounded-[32px] md:rounded-[40px] overflow-hidden border-2 border-emerald-100 shadow-[0_20px_50px_rgba(16,185,129,0.10)] relative" style={{ zIndex: 0 }}>
                 <MapContainer center={[8.4822, 124.6472]} zoom={14} style={{ height: "100%", width: "100%", zIndex: 0 }} scrollWheelZoom={false}>
                   <MapFocusHandler selectedZoneId={selectedZoneId} zones={zones} />
                   <LayersControl position="topright">
@@ -820,11 +879,11 @@ const LandingPage = () => {
             </motion.div>
 
             {/* --- SEPARATED LEGEND BELOW THE MAP --- */}
-            <motion.div className="flex flex-wrap items-center justify-center gap-6 px-8 py-5 bg-[#f4fbf7] border border-emerald-100 rounded-3xl shadow-sm" {...fadeInScroll}>
-              <div className="flex items-center gap-2"><div className="w-3.5 h-3.5 rounded-full bg-slate-400 shadow-sm" /><span className="text-xs font-bold text-slate-600 uppercase tracking-widest">Collected / Resolved</span></div>
-              <div className="flex items-center gap-2"><div className="w-3.5 h-3.5 rounded-full bg-emerald-500 shadow-sm" /><span className="text-xs font-bold text-slate-600 uppercase tracking-widest">Pending Bin</span></div>
-              <div className="flex items-center gap-2"><div className="w-3.5 h-3.5 rounded-full bg-orange-500 shadow-sm animate-pulse" /><span className="text-xs font-bold text-slate-600 uppercase tracking-widest">Report In Progress</span></div>
-              <div className="flex items-center gap-2"><div className="w-3.5 h-3.5 rounded-full bg-rose-600 shadow-sm" /><span className="text-xs font-bold text-slate-600 uppercase tracking-widest">Missed / New Report</span></div>
+            <motion.div className="flex flex-wrap items-center justify-center gap-4 md:gap-6 px-6 md:px-8 py-4 md:py-5 bg-[#f4fbf7] border border-emerald-100 rounded-2xl md:rounded-3xl shadow-sm" {...fadeInScroll}>
+              <div className="flex items-center gap-2"><div className="w-3 h-3 md:w-3.5 md:h-3.5 rounded-full bg-slate-400 shadow-sm" /><span className="text-[10px] md:text-xs font-bold text-slate-600 uppercase tracking-widest">Collected / Resolved</span></div>
+              <div className="flex items-center gap-2"><div className="w-3 h-3 md:w-3.5 md:h-3.5 rounded-full bg-emerald-500 shadow-sm" /><span className="text-[10px] md:text-xs font-bold text-slate-600 uppercase tracking-widest">Pending Bin</span></div>
+              <div className="flex items-center gap-2"><div className="w-3 h-3 md:w-3.5 md:h-3.5 rounded-full bg-orange-500 shadow-sm animate-pulse" /><span className="text-[10px] md:text-xs font-bold text-slate-600 uppercase tracking-widest">Report In Progress</span></div>
+              <div className="flex items-center gap-2"><div className="w-3 h-3 md:w-3.5 md:h-3.5 rounded-full bg-rose-600 shadow-sm" /><span className="text-[10px] md:text-xs font-bold text-slate-600 uppercase tracking-widest">Missed / New Report</span></div>
             </motion.div>
 
           </div>
@@ -1038,7 +1097,7 @@ const LandingPage = () => {
                 <div className="flex items-center gap-3">
                   {/* FOOTER LOGO UPDATE */}
                   <div className="w-14 h-14 md:w-16 md:h-16 flex items-center justify-center bg-white border-2 border-emerald-500 rounded-full overflow-hidden shadow-lg shadow-emerald-600/10">
-                    <img src={logoImg} alt="Logo" className="w-full h-full object-cover" />
+                    <img src={logoImg} alt="Logo" className="w-full h-full object-cover scale-125" />
                   </div>
                   <span className="text-xl font-bold uppercase tracking-tight text-white">Aksyon <span className="text-emerald-500">Basura</span></span>
                 </div>
