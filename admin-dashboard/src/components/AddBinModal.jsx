@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { X, Trash2, Plus, MapPin, Eraser } from 'lucide-react';
+import { X, Trash2, Plus, MapPin, Eraser, Archive } from 'lucide-react';
 import { MapContainer, TileLayer, Polygon, Marker, useMapEvents, LayersControl, Popup, useMap } from 'react-leaflet';
 import { renderToStaticMarkup } from 'react-dom/server';
 import * as turf from '@turf/turf';
@@ -266,7 +266,8 @@ const AddBinModal = ({ isOpen, onClose, zone, onAddBin, onDeleteBin, onRelocateB
                       <p className="text-[11px] text-gray-400 truncate">{bin.bin_address || 'No address'}</p>
                     </div>
                   </div>
-                  <button onClick={(e) => { e.stopPropagation(); onDeleteBin(bin.bin_id); }} className="text-red-300 hover:text-red-500 p-2 cursor-pointer transition-all shrink-0"><Trash2 size={16} /></button>
+                  {/* ✅ Updated to use Archive icon and amber styling */}
+                  <button title="Archive Bin" onClick={(e) => { e.stopPropagation(); onDeleteBin(bin.bin_id); }} className="text-amber-400 hover:text-amber-600 hover:bg-amber-50 rounded-lg p-2 cursor-pointer transition-all shrink-0"><Archive size={16} /></button>
                 </div>
               )) : (
                 <div className="text-center py-10 text-gray-400 italic text-sm">No bins in this zone yet.</div>
