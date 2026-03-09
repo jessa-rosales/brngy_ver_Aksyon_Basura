@@ -6,8 +6,10 @@ import {
   MapPin, Users, BarChart3, Zap, Shield, Bell,
   Facebook, Twitter, Linkedin, Instagram, Mail, Phone, Clock,
   Truck, ClipboardCheck, Globe, Sparkles, Heart, Quote,
-  ArrowUp, ChevronLeft, ChevronRight, Trash2, AlertCircle, ChevronDown 
+  ArrowUp, ChevronLeft, ChevronRight, Trash2, AlertCircle, ChevronDown,
+  Smartphone
 } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react'; 
 
 // --- MAP IMPORTS ---
 import L from 'leaflet';
@@ -21,6 +23,7 @@ import { publicService } from '../services/publicService';
 // Asset Imports
 import landingImg from '../assets/landing_page_img.png';
 import logoImg from '../assets/logo10.png';
+import apkGuideImg from '../assets/apk.jpg'; 
 
 // Citizen Workflow Assets
 import clogin1 from '../assets/c-login1.jpg';
@@ -53,6 +56,11 @@ import dfeed from '../assets/D-feed.jpg';
 import dnews from '../assets/D-news.jpg';
 import dschedule from '../assets/D-schedule.jpg';
 import dprofile from '../assets/D-profile.jpg';
+
+// ==========================================
+// APP DOWNLOAD LINK
+// ==========================================
+const EXPO_DOWNLOAD_LINK = "https://expo.dev/accounts/jejerogo/projects/aksyon-basura/builds/016b6294-7a92-442e-b53a-aa88f2171523";
 
 // ==========================================
 // MAP MARKER HELPERS & FOCUS HANDLER
@@ -184,9 +192,11 @@ const LandingPage = () => {
   const [showBackToTop, setShowBackToTop] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
   
-  // NEW STATES FOR SMART NAVBAR
+  // NEW STATES FOR SMART NAVBAR & MODAL
   const [showNav, setShowNav] = useState(true);
   const lastScrollY = useRef(0);
+  const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
+  const [isMobileDevice, setIsMobileDevice] = useState(false);
 
   // --- MAP STATE ---
   const [zones, setZones] = useState([]);
@@ -204,6 +214,16 @@ const LandingPage = () => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [navigate]);
+
+  // --- DEVICE DETECTION ---
+  useEffect(() => {
+    const checkDevice = () => {
+      const userAgent = typeof window.navigator === "undefined" ? "" : navigator.userAgent;
+      const mobile = Boolean(userAgent.match(/Android|BlackBerry|iPhone|iPad|iPod|Opera Mini|IEMobile|WPDesktop/i));
+      setIsMobileDevice(mobile);
+    };
+    checkDevice();
+  }, []);
 
   // --- LOADING LOGIC & DATA FETCHING ---
   useEffect(() => {
@@ -246,7 +266,7 @@ const LandingPage = () => {
         });
         setAllReports(visibleReports);
 
-      } catch (err) {
+        } catch (err) {
         console.error("Landing Map Load Error:", err);
       } finally {
         setTimeout(() => setIsLoading(false), 2500); 
@@ -612,6 +632,114 @@ const LandingPage = () => {
           )}
         </AnimatePresence>
 
+        {/* --- ENHANCED DOWNLOAD MODAL --- */}
+        <AnimatePresence>
+          {isDownloadModalOpen && (
+            <>
+              {/* Dark Blurred Backdrop */}
+              <motion.div 
+                initial={{ opacity: 0 }} 
+                animate={{ opacity: 1 }} 
+                exit={{ opacity: 0 }} 
+                onClick={() => setIsDownloadModalOpen(false)} 
+                className="fixed inset-0 bg-emerald-950/80 backdrop-blur-sm z-[200]" 
+              />
+              
+              {/* Modal Container */}
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.9, y: 20 }} 
+                animate={{ opacity: 1, scale: 1, y: 0 }} 
+                exit={{ opacity: 0, scale: 0.9, y: 20 }} 
+                className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[210] w-[90%] max-w-md bg-white rounded-[40px] p-8 shadow-2xl border border-emerald-100 flex flex-col items-center text-center max-h-[90vh] overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-track]:my-8 [&::-webkit-scrollbar-thumb]:bg-emerald-200 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-emerald-300 transition-colors"
+              >
+                {/* Close Button */}
+                <button 
+                  onClick={() => setIsDownloadModalOpen(false)} 
+                  className="absolute top-6 right-6 p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-full transition-colors active:scale-90"
+                >
+                  <X size={24} />
+                </button>
+                
+                {/* Header Logo */}
+                <div className="w-24 h-24 bg-white border-4 border-emerald-500 rounded-full flex items-center justify-center mb-6 shadow-[0_0_30px_rgba(16,185,129,0.2)] overflow-hidden relative shrink-0">
+                  <img src={logoImg} alt="Aksyon Basura Logo" className="w-full h-full object-cover scale-125" />
+                </div>
+                
+                <h3 className="text-3xl font-black text-emerald-950 uppercase tracking-tight mb-2">Get the App</h3>
+                
+                {isMobileDevice ? (
+                  // --- MOBILE VIEW: Direct Download Buttons ---
+                  <>
+                    <p className="text-slate-600 mb-6 leading-relaxed text-sm px-2">
+                      You're one tap away from making a difference! Click below to install the Aksyon Basura app on your device.
+                    </p>
+                    <div className="w-full flex flex-col gap-4">
+                      <a 
+                        href={EXPO_DOWNLOAD_LINK}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black uppercase tracking-widest text-sm shadow-xl shadow-emerald-600/30 hover:bg-emerald-500 hover:-translate-y-1 transition-all active:scale-95 flex items-center justify-center gap-3"
+                      >
+                        <Smartphone size={20} /> Download App Now
+                      </a>
+                      <button 
+                        onClick={() => setIsDownloadModalOpen(false)}
+                        className="w-full py-4 bg-slate-50 border border-slate-200 text-slate-500 rounded-2xl font-bold uppercase tracking-widest text-xs hover:bg-slate-100 hover:text-slate-700 transition-all active:scale-95"
+                      >
+                        Maybe Later
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  // --- DESKTOP VIEW: Scannable QR Code ---
+                  <>
+                    <p className="text-slate-600 mb-6 leading-relaxed text-sm">
+                      Open your phone's camera and scan the QR code below to install the Aksyon Basura app.
+                    </p>
+                    <div className="p-4 bg-white border-2 border-emerald-100 rounded-3xl mb-4 flex flex-col items-center justify-center shadow-sm">
+                      <QRCodeSVG 
+                        value={EXPO_DOWNLOAD_LINK}
+                        size={160}
+                        bgColor={"#ffffff"}
+                        fgColor={"#022c22"} // This matches text-emerald-950
+                        level={"Q"}
+                        includeMargin={false}
+                      />
+                    </div>
+                    <p className="text-xs text-slate-400 font-medium uppercase tracking-widest">Scan to Download via Expo</p>
+                  </>
+                )}
+
+                {/* --- 🔥 NEW: QUICK GUIDE / REASSURANCE --- */}
+                <div className="mt-8 w-full border-t border-slate-100 pt-6 flex flex-col items-center">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Sparkles size={16} className="text-emerald-500" />
+                    <p className="text-xs font-bold uppercase tracking-widest text-emerald-600">What to expect</p>
+                  </div>
+                  
+                  <div className="w-full rounded-2xl overflow-hidden border-2 border-slate-100 shadow-sm relative group bg-slate-50 p-2">
+                    <img 
+                      src={apkGuideImg} 
+                      alt="APK Download Guide" 
+                      className="w-full h-auto object-cover rounded-xl" 
+                    />
+                    <div className="absolute inset-0 bg-emerald-900/5 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                      <span className="bg-white text-emerald-800 text-[10px] font-bold px-3 py-1 rounded-full shadow-lg uppercase tracking-wider border border-emerald-100">
+                        Tap to install
+                      </span>
+                    </div>
+                  </div>
+                  
+                  <p className="text-[12px] text-slate-500 mt-4 font-medium px-2 text-center leading-relaxed">
+                    You're on the right track! Once you scan the code or tap the link, simply hit the download button as shown above to install.
+                  </p>
+                </div>
+
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>
+
         <AnimatePresence>
           {isMenuOpen && (
             <>
@@ -624,7 +752,11 @@ const LandingPage = () => {
                       <a key={item} href={`#${item.toLowerCase().replace(/\s+/g, '-')}`} onClick={() => setIsMenuOpen(false)} className="block text-2xl font-bold uppercase tracking-tight text-emerald-950 hover:text-emerald-600 transition-colors">{item}</a>
                     ))}
                   </div>
-                  <div className="mt-auto"><button className="w-full py-4 bg-emerald-600 text-white rounded-xl font-bold uppercase tracking-widest text-sm shadow-lg hover:bg-emerald-700 transition-colors">Open Dashboard</button></div>
+                  <div className="mt-auto">
+                    <button onClick={() => { setIsMenuOpen(false); setIsDownloadModalOpen(true); }} className="w-full py-4 bg-emerald-600 text-white rounded-xl font-bold uppercase tracking-widest text-sm shadow-lg hover:bg-emerald-700 transition-colors">
+                      Download App
+                    </button>
+                  </div>
                 </div>
               </motion.div>
             </>
@@ -649,7 +781,7 @@ const LandingPage = () => {
               ))}
             </div>
             <div className="flex items-center gap-4">
-              <button className={`hidden sm:block px-6 py-2 font-bold rounded-lg transition-all text-xs uppercase active:scale-95 border ${isScrolled ? 'bg-emerald-100 text-emerald-700 border-emerald-200 hover:bg-emerald-600 hover:text-white' : 'bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white border-emerald-500/50'}`}>Get The App Now</button>
+              <button onClick={() => setIsDownloadModalOpen(true)} className={`hidden sm:block px-6 py-2 font-bold rounded-lg transition-all text-xs uppercase active:scale-95 border ${isScrolled ? 'bg-emerald-100 text-emerald-700 border-emerald-200 hover:bg-emerald-600 hover:text-white' : 'bg-emerald-600/20 hover:bg-emerald-600 text-emerald-400 hover:text-white border-emerald-500/50'}`}>Get The App Now</button>
               <button onClick={() => setIsMenuOpen(true)} className={`lg:hidden p-2 rounded-lg active:scale-90 transition-all ${isScrolled ? 'text-emerald-950 hover:bg-emerald-100' : 'text-white hover:bg-white/10'}`}><Menu size={28} /></button>
             </div>
           </div>
@@ -665,7 +797,7 @@ const LandingPage = () => {
               <h1 className="text-[44px] md:text-[75px] font-black leading-[0.95] mb-8 uppercase tracking-tighter text-white">Transform Your  <br />Barangay<span className="bg-gradient-to-r from-emerald-300 to-emerald-500 bg-clip-text text-transparent"> Waste Management</span> <br />Into Intelligence</h1>
               <p className="text-base md:text-xl text-emerald-50 font-medium mb-12 max-w-2xl">Empowering Barangay Nazareth with real-time tracking, and citizen engagement tools to build cleaner, smarter, and more sustainable communities.</p>
               <div className="flex flex-col sm:flex-row items-center gap-5">
-                <button className="w-full sm:w-auto px-12 py-5 bg-emerald-600 text-white font-black rounded-2xl flex items-center justify-center gap-3 hover:bg-emerald-500 transition-all text-sm uppercase shadow-2xl shadow-emerald-600/20 active:scale-95">Go to App Now! <ArrowRight size={20} /></button>
+                <button onClick={() => setIsDownloadModalOpen(true)} className="w-full sm:w-auto px-12 py-5 bg-emerald-600 text-white font-black rounded-2xl flex items-center justify-center gap-3 hover:bg-emerald-500 transition-all text-sm uppercase shadow-2xl shadow-emerald-600/20 active:scale-95">Go to App Now! <ArrowRight size={20} /></button>
                 <button 
                   onClick={() => {
                     const section = document.getElementById('how-it-works');
@@ -798,7 +930,7 @@ const LandingPage = () => {
                 </div>
 
                 {/* Desktop Sidebar */}
-                <div className="hidden lg:flex flex-col gap-2 overflow-y-auto pr-2" style={{ scrollbarWidth: 'thin' }}>
+                <div className="hidden lg:flex flex-col gap-2 overflow-y-auto pr-2 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-emerald-200 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-emerald-300 transition-colors">
                   <button 
                     onClick={() => setSelectedZoneId('all')}
                     className={`p-4 rounded-2xl text-left transition-all border ${selectedZoneId === 'all' ? 'bg-emerald-600 text-white shadow-md border-emerald-500' : 'bg-slate-50 text-slate-700 border-slate-100 hover:bg-emerald-50 hover:border-emerald-200'}`}
@@ -1050,7 +1182,7 @@ const LandingPage = () => {
                 <h4 className="text-3xl font-bold mb-2 uppercase tracking-tight text-white">Be part of the change.</h4>
                 <p className="text-emerald-100/80 text-sm leading-relaxed">Join thousands of residents in Cagayan de Oro who are actively shaping a cleaner, smarter future for the next generation.</p>
               </div>
-              <button className="px-10 py-5 bg-white text-emerald-950 font-black rounded-2xl uppercase tracking-tighter hover:bg-emerald-50 transition-all whitespace-nowrap active:scale-95 shadow-lg">Get Started Now</button>
+              <button onClick={() => setIsDownloadModalOpen(true)} className="px-10 py-5 bg-white text-emerald-950 font-black rounded-2xl uppercase tracking-tighter hover:bg-emerald-50 transition-all whitespace-nowrap active:scale-95 shadow-lg">Get Started Now</button>
             </motion.div>
           </div>
         </section>
