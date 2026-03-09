@@ -30,7 +30,8 @@ router.get('/bins', async (req, res) => {
          zone_id, 
          collection_status, 
          last_collected_timestamp 
-       FROM waste_bins`
+       FROM waste_bins
+       WHERE is_archived = false` // ✅ FIX: Added this WHERE clause to filter out archived bins
     );
     res.json(result.rows);
   } catch (err) {
