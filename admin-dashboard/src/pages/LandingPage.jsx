@@ -62,6 +62,55 @@ import dprofile from '../assets/D-profile.jpg';
 // ==========================================
 const EXPO_DOWNLOAD_LINK = "https://expo.dev/accounts/jejerogo/projects/aksyon-basura/builds/016b6294-7a92-442e-b53a-aa88f2171523";
 
+
+/* ==========================================
+   NAZARETH BOUNDARY CONFIGURATION
+   ========================================== */
+const NAZARETH_RAW_COORDS = [
+  { lat: 8.474278931277277, lng: 124.6416735649109 },
+  { lat: 8.473249232032625, lng: 124.64182376861574 },
+  { lat: 8.47292013734312, lng: 124.64173793792726 },
+  { lat: 8.472495517931753, lng: 124.64177012443544 },
+  { lat: 8.471805510388503, lng: 124.64146971702577 },
+  { lat: 8.471094465135494, lng: 124.64115858078004 },
+  { lat: 8.469846743009528, lng: 124.64514434337617 },
+  { lat: 8.469708748133874, lng: 124.64548230171205 },
+  { lat: 8.4690932448959, lng: 124.64548230171205 },
+  { lat: 8.468552087301081, lng: 124.64524626731874 },
+  { lat: 8.466695000208981, lng: 124.64402854442598 },
+  { lat: 8.464901551589385, lng: 124.64708089828493 },
+  { lat: 8.466015902915824, lng: 124.64851856231691 },
+  { lat: 8.46642971548801, lng: 124.64921593666078 },
+  { lat: 8.466397795540207, lng: 124.64953243732454 },
+  { lat: 8.466503886632513, lng: 124.64983820915224 },
+  { lat: 8.46840872672014, lng: 124.65122222900392 },
+  { lat: 8.47082907679877, lng: 124.6527671813965 },
+  { lat: 8.471646472289459, lng: 124.65171575546266 },
+  { lat: 8.472607175158831, lng: 124.65216636657716 },
+  { lat: 8.473063133108639, lng: 124.6523802309309 },
+  { lat: 8.473567875628627, lng: 124.65261697769166 },
+  { lat: 8.473716492061547, lng: 124.65269207954408 },
+  { lat: 8.473918185700098, lng: 124.65223073959352 },
+  { lat: 8.475510500184921, lng: 124.65230584144594 },
+  { lat: 8.475754654489542, lng: 124.65232729911806 },
+  { lat: 8.47566189340505, lng: 124.65082526206972 },
+  { lat: 8.475672544357778, lng: 124.64916765689851 },
+  { lat: 8.47460818945307, lng: 124.64960217475893 },
+  { lat: 8.47445957336473, lng: 124.64998841285707 },
+  { lat: 8.474523265981052, lng: 124.64951634407045 },
+  { lat: 8.47445957336473, lng: 124.64870095252992 },
+  { lat: 8.474226033681298, lng: 124.64805722236635 },
+  { lat: 8.474183571905444, lng: 124.64719891548158 },
+  { lat: 8.474427727052605, lng: 124.64700579643251 },
+  { lat: 8.47441711161465, lng: 124.6467161178589 },
+  { lat: 8.474958498576875, lng: 124.6467161178589 },
+  { lat: 8.474998686427247, lng: 124.64370131492616 },
+  { lat: 8.47377835251348, lng: 124.6434384584427 }
+];
+
+const NAZARETH_LEAFLET_POSITIONS = NAZARETH_RAW_COORDS.map(c => [c.lat, c.lng]);
+
+
 // ==========================================
 // MAP MARKER HELPERS & FOCUS HANDLER
 // ==========================================
@@ -94,8 +143,8 @@ const MapFocusHandler = ({ selectedZoneId, zones }) => {
   const map = useMap();
   useEffect(() => {
     if (selectedZoneId === 'all') {
-      // Default view for whole city
-      map.setView([8.4822, 124.6472], 14, { animate: true });
+      // ✅ Center on Nazareth
+      map.setView([8.4703, 124.6469], 16, { animate: true });
     } else {
       const activeZone = zones.find(z => String(z.zone_id) === String(selectedZoneId));
       if (activeZone && activeZone.boundaries) {
@@ -856,6 +905,15 @@ const LandingPage = () => {
                 <h3 className="text-4xl md:text-5xl font-black uppercase tracking-tight leading-tight text-emerald-950">Live City Overview</h3>
                 <p className="text-slate-600 mt-4 text-lg leading-relaxed">Watch real-time waste collection activities and community reports across the barangay.</p>
               </div>
+
+              {/* ✅ ADDED MAP LEGEND BADGE FOR NAZARETH BOUNDARY */}
+              <div className="flex items-center gap-2 bg-[#f4fbf7] px-4 py-2 rounded-xl border border-emerald-100 shadow-sm shrink-0 h-fit">
+                 <div className="w-6 h-0 border-t-[3px] border-dashed border-blue-500"></div>
+                 <div className="flex flex-col">
+                   <span className="text-[10px] font-black text-blue-800 uppercase tracking-widest leading-none">Nazareth</span>
+                   <span className="text-[9px] font-bold text-blue-600 uppercase tracking-widest mt-0.5 leading-none">Boundary</span>
+                 </div>
+              </div>
             </motion.div>
 
             {/* --- SEPARATED STATS ABOVE THE MAP --- */}
@@ -954,7 +1012,8 @@ const LandingPage = () => {
 
               {/* Map Container - FIXED FOR MOBILE */}
               <div className="w-full lg:flex-1 h-[450px] min-h-[450px] lg:h-[550px] shrink-0 rounded-[32px] md:rounded-[40px] overflow-hidden border-2 border-emerald-100 shadow-[0_20px_50px_rgba(16,185,129,0.10)] relative" style={{ zIndex: 0 }}>
-                <MapContainer center={[8.4822, 124.6472]} zoom={14} style={{ height: "100%", width: "100%", zIndex: 0 }} scrollWheelZoom={false}>
+                {/* ✅ ZOOM UPDATED HERE TO 16 for better Nazareth view */}
+                <MapContainer center={[8.4703, 124.6469]} zoom={16} style={{ height: "100%", width: "100%", zIndex: 0 }} scrollWheelZoom={false}>
                   <MapFocusHandler selectedZoneId={selectedZoneId} zones={zones} />
                   <LayersControl position="topright">
                     <LayersControl.BaseLayer checked name="Google Streets">
@@ -964,6 +1023,13 @@ const LandingPage = () => {
                       <TileLayer url="https://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}" subdomains={['mt0', 'mt1', 'mt2', 'mt3']} attribution='&copy; Google Maps' />
                     </LayersControl.BaseLayer>
                   </LayersControl>
+
+                  {/* ✅ ADDED NON-INTERACTIVE NAZARETH BOUNDARY */}
+                  <Polygon 
+                    positions={NAZARETH_LEAFLET_POSITIONS}
+                    interactive={false}
+                    pathOptions={{ color: '#3b82f6', fillOpacity: 0.03, weight: 3, dashArray: '8, 8' }}
+                  />
 
                   {filteredZones.map((zone) => {
                     if (!zone.boundaries) return null;

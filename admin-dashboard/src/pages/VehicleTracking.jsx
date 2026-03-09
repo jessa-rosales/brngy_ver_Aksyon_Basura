@@ -21,6 +21,93 @@ import truckIcon from '../assets/truck.png';
 // 🔑 Mapbox Token
 const MAPBOX_TOKEN = 'pk.eyJ1IjoiamVnby1ybyIsImEiOiJjbWx6dnZ6YmQwOW12NGtxd25vMmJldGZhIn0.uCCN-70t1ZZugt6h1ZoMOg';
 
+/* ==========================================
+   NAZARETH BOUNDARY CONFIGURATION
+   ========================================== */
+const NAZARETH_RAW_COORDS = [
+  { lat: 8.474278931277277, lng: 124.6416735649109 },
+  { lat: 8.473249232032625, lng: 124.64182376861574 },
+  { lat: 8.47292013734312, lng: 124.64173793792726 },
+  { lat: 8.472495517931753, lng: 124.64177012443544 },
+  { lat: 8.471805510388503, lng: 124.64146971702577 },
+  { lat: 8.471094465135494, lng: 124.64115858078004 },
+  { lat: 8.469846743009528, lng: 124.64514434337617 },
+  { lat: 8.469708748133874, lng: 124.64548230171205 },
+  { lat: 8.4690932448959, lng: 124.64548230171205 },
+  { lat: 8.468552087301081, lng: 124.64524626731874 },
+  { lat: 8.466695000208981, lng: 124.64402854442598 },
+  { lat: 8.464901551589385, lng: 124.64708089828493 },
+  { lat: 8.466015902915824, lng: 124.64851856231691 },
+  { lat: 8.46642971548801, lng: 124.64921593666078 },
+  { lat: 8.466397795540207, lng: 124.64953243732454 },
+  { lat: 8.466503886632513, lng: 124.64983820915224 },
+  { lat: 8.46840872672014, lng: 124.65122222900392 },
+  { lat: 8.47082907679877, lng: 124.6527671813965 },
+  { lat: 8.471646472289459, lng: 124.65171575546266 },
+  { lat: 8.472607175158831, lng: 124.65216636657716 },
+  { lat: 8.473063133108639, lng: 124.6523802309309 },
+  { lat: 8.473567875628627, lng: 124.65261697769166 },
+  { lat: 8.473716492061547, lng: 124.65269207954408 },
+  { lat: 8.473918185700098, lng: 124.65223073959352 },
+  { lat: 8.475510500184921, lng: 124.65230584144594 },
+  { lat: 8.475754654489542, lng: 124.65232729911806 },
+  { lat: 8.47566189340505, lng: 124.65082526206972 },
+  { lat: 8.475672544357778, lng: 124.64916765689851 },
+  { lat: 8.47460818945307, lng: 124.64960217475893 },
+  { lat: 8.47445957336473, lng: 124.64998841285707 },
+  { lat: 8.474523265981052, lng: 124.64951634407045 },
+  { lat: 8.47445957336473, lng: 124.64870095252992 },
+  { lat: 8.474226033681298, lng: 124.64805722236635 },
+  { lat: 8.474183571905444, lng: 124.64719891548158 },
+  { lat: 8.474427727052605, lng: 124.64700579643251 },
+  { lat: 8.47441711161465, lng: 124.6467161178589 },
+  { lat: 8.474958498576875, lng: 124.6467161178589 },
+  { lat: 8.474998686427247, lng: 124.64370131492616 },
+  { lat: 8.47377835251348, lng: 124.6434384584427 }
+];
+
+// Mapbox requires GeoJSON coords to be [longitude, latitude]
+const NAZARETH_GEOJSON_COORDS = NAZARETH_RAW_COORDS.map(c => [c.lng, c.lat]);
+// Close the polygon if it isn't already
+if (
+  NAZARETH_GEOJSON_COORDS[0][0] !== NAZARETH_GEOJSON_COORDS[NAZARETH_GEOJSON_COORDS.length - 1][0] || 
+  NAZARETH_GEOJSON_COORDS[0][1] !== NAZARETH_GEOJSON_COORDS[NAZARETH_GEOJSON_COORDS.length - 1][1]
+) {
+  NAZARETH_GEOJSON_COORDS.push(NAZARETH_GEOJSON_COORDS[0]);
+}
+
+const NAZARETH_GEOJSON = {
+  type: 'FeatureCollection',
+  features: [
+    {
+      type: 'Feature',
+      geometry: {
+        type: 'Polygon',
+        coordinates: [NAZARETH_GEOJSON_COORDS]
+      }
+    }
+  ]
+};
+
+const nazarethFillStyle = {
+  id: 'nazareth-fill',
+  type: 'fill',
+  paint: {
+    'fill-color': '#3b82f6',
+    'fill-opacity': 0.03
+  }
+};
+
+const nazarethLineStyle = {
+  id: 'nazareth-line',
+  type: 'line',
+  paint: {
+    'line-color': '#3b82f6',
+    'line-width': 3,
+    'line-dasharray': [3, 3]
+  }
+};
+
 // ==========================================
 // 🔥 MATH HELPER: Point in Polygon
 // Used to count bins/reports inside a zone
@@ -144,10 +231,11 @@ const VehicleTracking = () => {
   // 🔥 NEW: State for Zone Popup
   const [selectedZoneInfo, setSelectedZoneInfo] = useState(null);
 
+  // ✅ Updated default viewState to center and zoom in on Nazareth
   const [viewState, setViewState] = useState({
-    longitude: 124.6459, 
-    latitude: 8.4772,    
-    zoom: 13,
+    longitude: 124.6469, 
+    latitude: 8.4703,    
+    zoom: 15,
     pitch: 45,           
   });
 
@@ -264,7 +352,7 @@ const VehicleTracking = () => {
     });
   }, [reports]);
 
-  // 🔥 NEW: Add Bin & Report Counts directly into GeoJSON Properties
+  // 🔥 Add Bin & Report Counts directly into GeoJSON Properties
   const zonesGeoJSON = useMemo(() => {
     if (!zones || zones.length === 0) return null;
 
@@ -310,10 +398,7 @@ const VehicleTracking = () => {
   const liveFleet = useMemo(() => {
     return vehicles.map(truck => {
       let filteredHistory = truck.history || [];
-      
-      // Fallback behavior: only show most recent 2 shifts
       filteredHistory = filteredHistory.slice(0, 2);
-
       return { ...truck, filteredHistory };
     }).filter(truck => {
       const searchString = `${truck.vehicle_name} ${truck.plate_number} ${truck.filteredHistory.map(h => h.driverName).join(' ')}`
@@ -326,13 +411,13 @@ const VehicleTracking = () => {
 
   const focusOnTruck = (truck) => {
     setSelectedTruckId(truck.vehicle_id);
-    const safeLng = Number(truck.lng) || 124.6459;
-    const safeLat = Number(truck.lat) || 8.4772;
+    const safeLng = Number(truck.lng) || 124.6469;
+    const safeLat = Number(truck.lat) || 8.4703;
 
     setViewState({
       longitude: safeLng,
       latitude: safeLat,
-      zoom: 16,
+      zoom: 17,
       pitch: is3D ? 60 : 0, 
       transitionDuration: 1500,
     });
@@ -351,7 +436,7 @@ const VehicleTracking = () => {
     }));
   };
 
-  // 🔥 NEW: Map Click Handler for Zones
+  // 🔥 Map Click Handler for Zones
   const handleMapClick = useCallback((event) => {
     const { features, lngLat } = event;
     const clickedFeature = features && features.find(f => f.layer.id === 'zones-fill');
@@ -422,7 +507,6 @@ const VehicleTracking = () => {
             <p className="text-gray-600 text-sm mt-1">Real-time GPS positioning of all active collection vehicles</p>
           </div>
           <div className="flex items-center gap-4">
-            {/* Removed Calendar Filter UI per request */}
             <span className="flex items-center gap-2 px-4 py-2 bg-emerald-100 text-emerald-800 rounded-xl text-xs font-bold border border-emerald-200 shadow-sm animate-pulse">
               <Activity size={14} /> SATELLITE LINK
             </span>
@@ -431,8 +515,19 @@ const VehicleTracking = () => {
 
         {/* TOP: Mapbox Map */}
         <div className={d.mapCard}>
-          <div className={d.mapHeader}>
-            <h3 className="font-bold text-gray-700 flex items-center gap-2 text-lg">Interactive Map View</h3>
+          <div className={`${d.mapHeader} flex flex-wrap justify-between items-center gap-4`}>
+            
+            <div className="flex items-center gap-4">
+              <h3 className="font-bold text-gray-700 flex items-center gap-2 text-lg">
+                <MapIcon size={18} className="text-green-600" /> Interactive Map View
+              </h3>
+              {/* ✅ ADDED MAP LEGEND BADGE */}
+              <div className="hidden sm:flex items-center gap-2 bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-100 shadow-sm">
+                <div className="w-5 h-0 border-t-2 border-dashed border-blue-500"></div>
+                <span className="text-xs font-bold text-blue-700">Nazareth Area Boundary</span>
+              </div>
+            </div>
+
           </div>
           <div className={`${d.mapFrame} relative`} style={{ height: '450px' }}>
             <Map
@@ -441,10 +536,16 @@ const VehicleTracking = () => {
               mapStyle={mapType === 'satellite' ? 'mapbox://styles/mapbox/satellite-streets-v12' : 'mapbox://styles/mapbox/streets-v12'}
               mapboxAccessToken={MAPBOX_TOKEN}
               style={{ width: '100%', height: '100%' }}
-              interactiveLayerIds={['zones-fill']} // 🔥 REQUIRED to make layer clickable
-              onClick={handleMapClick} // 🔥 Added Click Handler
+              interactiveLayerIds={['zones-fill']} 
+              onClick={handleMapClick} 
             >
               <NavigationControl position="top-right" />
+
+              {/* ✅ ADDED NAZARETH BOUNDARY LAYER (UNDERNEATH ZONES) */}
+              <Source id="nazareth-data" type="geojson" data={NAZARETH_GEOJSON}>
+                <Layer {...nazarethFillStyle} />
+                <Layer {...nazarethLineStyle} />
+              </Source>
 
               {/* 🔥 ZONES POLYGONS VIA GEOJSON */}
               {zonesGeoJSON && (
@@ -454,7 +555,7 @@ const VehicleTracking = () => {
                 </Source>
               )}
 
-              {/* 🔥 NEW: ZONE CLICK POPUP */}
+              {/* 🔥 ZONE CLICK POPUP */}
               {selectedZoneInfo && (
                 <Popup
                   longitude={selectedZoneInfo.longitude}
@@ -596,8 +697,8 @@ const VehicleTracking = () => {
               {/* Popup for Selected Truck */}
               {activeSelectedTruck && (
                 <Popup
-                  longitude={Number(activeSelectedTruck.lng) || 124.6459}
-                  latitude={Number(activeSelectedTruck.lat) || 8.4772}
+                  longitude={Number(activeSelectedTruck.lng) || 124.6469}
+                  latitude={Number(activeSelectedTruck.lat) || 8.4703}
                   anchor="bottom"
                   offset={25}
                   closeButton={false}
@@ -666,7 +767,7 @@ const VehicleTracking = () => {
             <button 
               onClick={() => {
                 setSelectedTruckId(null);
-                setViewState({ longitude: 124.6459, latitude: 8.4772, zoom: 13, pitch: is3D ? 45 : 0 });
+                setViewState({ longitude: 124.6469, latitude: 8.4703, zoom: 17, pitch: is3D ? 45 : 0 });
               }}
               className="absolute bottom-6 right-6 bg-white p-3 rounded-xl shadow-lg border border-slate-100 text-slate-600 hover:text-emerald-600 hover:bg-emerald-50 transition-all z-20"
               title="Recenter City Map"
@@ -728,7 +829,7 @@ const VehicleTracking = () => {
 
                     <div className="w-full h-px bg-gray-200 my-2" />
                     
-                    {/* 🔥 THE SHIFT ROSTER: Shows Driver A (Morning) & Driver B (Afternoon) in the SAME card */}
+                    {/* THE SHIFT ROSTER */}
                     <div className="flex-1 flex flex-col gap-2 mt-2">
                       <h5 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 px-1">Duty Sessions</h5>
                       

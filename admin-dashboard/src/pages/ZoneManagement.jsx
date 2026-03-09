@@ -16,6 +16,53 @@ import { zoneService } from '../services/zoneService';
 import { archiveService } from '../services/archiveService'; //not use
 import { useUser } from '../context/UserContext'; 
 
+/* ==========================================
+   NAZARETH BOUNDARY CONFIGURATION
+   ========================================== */
+const NAZARETH_RAW_COORDS = [
+  { lat: 8.474278931277277, lng: 124.6416735649109 },
+  { lat: 8.473249232032625, lng: 124.64182376861574 },
+  { lat: 8.47292013734312, lng: 124.64173793792726 },
+  { lat: 8.472495517931753, lng: 124.64177012443544 },
+  { lat: 8.471805510388503, lng: 124.64146971702577 },
+  { lat: 8.471094465135494, lng: 124.64115858078004 },
+  { lat: 8.469846743009528, lng: 124.64514434337617 },
+  { lat: 8.469708748133874, lng: 124.64548230171205 },
+  { lat: 8.4690932448959, lng: 124.64548230171205 },
+  { lat: 8.468552087301081, lng: 124.64524626731874 },
+  { lat: 8.466695000208981, lng: 124.64402854442598 },
+  { lat: 8.464901551589385, lng: 124.64708089828493 },
+  { lat: 8.466015902915824, lng: 124.64851856231691 },
+  { lat: 8.46642971548801, lng: 124.64921593666078 },
+  { lat: 8.466397795540207, lng: 124.64953243732454 },
+  { lat: 8.466503886632513, lng: 124.64983820915224 },
+  { lat: 8.46840872672014, lng: 124.65122222900392 },
+  { lat: 8.47082907679877, lng: 124.6527671813965 },
+  { lat: 8.471646472289459, lng: 124.65171575546266 },
+  { lat: 8.472607175158831, lng: 124.65216636657716 },
+  { lat: 8.473063133108639, lng: 124.6523802309309 },
+  { lat: 8.473567875628627, lng: 124.65261697769166 },
+  { lat: 8.473716492061547, lng: 124.65269207954408 },
+  { lat: 8.473918185700098, lng: 124.65223073959352 },
+  { lat: 8.475510500184921, lng: 124.65230584144594 },
+  { lat: 8.475754654489542, lng: 124.65232729911806 },
+  { lat: 8.47566189340505, lng: 124.65082526206972 },
+  { lat: 8.475672544357778, lng: 124.64916765689851 },
+  { lat: 8.47460818945307, lng: 124.64960217475893 },
+  { lat: 8.47445957336473, lng: 124.64998841285707 },
+  { lat: 8.474523265981052, lng: 124.64951634407045 },
+  { lat: 8.47445957336473, lng: 124.64870095252992 },
+  { lat: 8.474226033681298, lng: 124.64805722236635 },
+  { lat: 8.474183571905444, lng: 124.64719891548158 },
+  { lat: 8.474427727052605, lng: 124.64700579643251 },
+  { lat: 8.47441711161465, lng: 124.6467161178589 },
+  { lat: 8.474958498576875, lng: 124.6467161178589 },
+  { lat: 8.474998686427247, lng: 124.64370131492616 },
+  { lat: 8.47377835251348, lng: 124.6434384584427 }
+];
+
+const NAZARETH_LEAFLET_POSITIONS = NAZARETH_RAW_COORDS.map(c => [c.lat, c.lng]);
+
 const mainMapBinIcon = new L.DivIcon({
   html: renderToStaticMarkup(
     <div className="relative flex items-center justify-center">
@@ -51,7 +98,7 @@ const ZoneManagement = () => {
   // ARCHIVE CENTER STATES
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   
-  // ✅ NEW: Consolidate confirmation state so we can use one dialog for both Zones and Bins
+  // Consolidate confirmation state
   const [confirmConfig, setConfirmConfig] = useState({
     isOpen: false,
     title: '',
@@ -109,7 +156,6 @@ const ZoneManagement = () => {
 
   // Archiving
   const handleDeleteZone = (id) => {
-    // ✅ Use the new unified confirm config
     setConfirmConfig({
       isOpen: true,
       title: "Archive Zone?",
@@ -155,7 +201,6 @@ const ZoneManagement = () => {
   };
 
   const handleDeleteBin = (binId) => {
-    // ✅ Replaced window.confirm with the unified confirm config
     setConfirmConfig({
       isOpen: true,
       title: "Archive Bin?",
@@ -243,14 +288,25 @@ const ZoneManagement = () => {
 
         {/* INTERACTIVE MAP VIEW */}
         <div className={d.mapCard}>
-          <div className={d.mapHeader}>
-            <h3 className="font-bold text-gray-700 flex items-center gap-2 text-lg">Interactive Map View</h3>
+          <div className={`${d.mapHeader} flex flex-wrap justify-between items-center gap-4`}>
+            
+            {/* Left side title and legend */}
+            <div className="flex items-center gap-4">
+              <h3 className="font-bold text-gray-700 flex items-center gap-2 text-lg">Interactive Map View</h3>
+              {/* MAP LEGEND */}
+              <div className="hidden sm:flex items-center gap-2 bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-100 shadow-sm">
+                <div className="w-5 h-0 border-t-2 border-dashed border-blue-500"></div>
+                <span className="text-xs font-bold text-blue-700">Nazareth Area Boundary</span>
+              </div>
+            </div>
+
             <button onClick={openAddModal} className="bg-[#4CAF50] hover:bg-[#43A047] text-white px-5 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all shadow-sm cursor-pointer">
               <span className="bg-white text-[#4CAF50] rounded-full p-0.5"><Plus size={14} /></span> Add New Zone
             </button>
           </div>
           <div className={d.mapFrame}>
-             <MapContainer center={[8.4822, 124.6472]} zoom={15} style={{ height: "100%", width: "100%" }}>
+             {/* ✅ UPDATED CENTER AND ZOOM LEVEL HERE */}
+             <MapContainer center={[8.4703, 124.6469]} zoom={16} style={{ height: "100%", width: "100%" }}>
                 <LayersControl position="topright">
                   <LayersControl.BaseLayer checked name="Google Streets">
                     <TileLayer url="https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}" subdomains={['mt0', 'mt1', 'mt2', 'mt3']} attribution='&copy; Google Maps' />
@@ -259,6 +315,13 @@ const ZoneManagement = () => {
                     <TileLayer url="https://{s}.google.com/vt/lyrs=s,h&x={x}&y={y}&z={z}" subdomains={['mt0', 'mt1', 'mt2', 'mt3']} attribution='&copy; Google Maps' />
                   </LayersControl.BaseLayer>
                 </LayersControl>
+
+                {/* NON-INTERACTIVE NAZARETH BOUNDARY */}
+                <Polygon 
+                  positions={NAZARETH_LEAFLET_POSITIONS}
+                  interactive={false}
+                  pathOptions={{ color: '#3b82f6', fillOpacity: 0.03, weight: 3, dashArray: '8, 8' }}
+                />
 
                 {zones.map((zone) => {
                   if (!zone.boundaries) return null;
@@ -378,7 +441,7 @@ const ZoneManagement = () => {
         existingBins={zoneBins}
       />
 
-      {/* ✅ UNIFIED ARCHIVE CONFIRMATION */}
+      {/* UNIFIED ARCHIVE CONFIRMATION */}
       <ConfirmDialog 
         isOpen={confirmConfig.isOpen}
         onClose={() => setConfirmConfig({ ...confirmConfig, isOpen: false })}

@@ -1,13 +1,66 @@
 import React, { useState, useEffect } from 'react';
-import { X, MousePointer2, Trash2, Save, Move } from 'lucide-react'; // Added Move icon
-import { MapContainer, TileLayer, useMap, Polygon, Popup } from 'react-leaflet';
+import { X, MousePointer2, Trash2, Save, Move } from 'lucide-react';
+import { MapContainer, TileLayer, useMap, Polygon } from 'react-leaflet';
 import '@geoman-io/leaflet-geoman-free';
 import '@geoman-io/leaflet-geoman-free/dist/leaflet-geoman.css';
 import L from 'leaflet';
 import * as turf from '@turf/turf';
 
 /* ==========================================
-    GEOMAN DRAWING CONTROLS
+   UPDATED NAZARETH BOUNDARY CONFIGURATION
+   ========================================== */
+const NAZARETH_RAW_COORDS = [
+  { lat: 8.474278931277277, lng: 124.6416735649109 },
+  { lat: 8.473249232032625, lng: 124.64182376861574 },
+  { lat: 8.47292013734312, lng: 124.64173793792726 },
+  { lat: 8.472495517931753, lng: 124.64177012443544 },
+  { lat: 8.471805510388503, lng: 124.64146971702577 },
+  { lat: 8.471094465135494, lng: 124.64115858078004 },
+  { lat: 8.469846743009528, lng: 124.64514434337617 },
+  { lat: 8.469708748133874, lng: 124.64548230171205 },
+  { lat: 8.4690932448959, lng: 124.64548230171205 },
+  { lat: 8.468552087301081, lng: 124.64524626731874 },
+  { lat: 8.466695000208981, lng: 124.64402854442598 },
+  { lat: 8.464901551589385, lng: 124.64708089828493 },
+  { lat: 8.466015902915824, lng: 124.64851856231691 },
+  { lat: 8.46642971548801, lng: 124.64921593666078 },
+  { lat: 8.466397795540207, lng: 124.64953243732454 },
+  { lat: 8.466503886632513, lng: 124.64983820915224 },
+  { lat: 8.46840872672014, lng: 124.65122222900392 },
+  { lat: 8.47082907679877, lng: 124.6527671813965 },
+  { lat: 8.471646472289459, lng: 124.65171575546266 },
+  { lat: 8.472607175158831, lng: 124.65216636657716 },
+  { lat: 8.473063133108639, lng: 124.6523802309309 },
+  { lat: 8.473567875628627, lng: 124.65261697769166 },
+  { lat: 8.473716492061547, lng: 124.65269207954408 },
+  { lat: 8.473918185700098, lng: 124.65223073959352 },
+  { lat: 8.475510500184921, lng: 124.65230584144594 },
+  { lat: 8.475754654489542, lng: 124.65232729911806 },
+  { lat: 8.47566189340505, lng: 124.65082526206972 },
+  { lat: 8.475672544357778, lng: 124.64916765689851 },
+  { lat: 8.47460818945307, lng: 124.64960217475893 },
+  { lat: 8.47445957336473, lng: 124.64998841285707 },
+  { lat: 8.474523265981052, lng: 124.64951634407045 },
+  { lat: 8.47445957336473, lng: 124.64870095252992 },
+  { lat: 8.474226033681298, lng: 124.64805722236635 },
+  { lat: 8.474183571905444, lng: 124.64719891548158 },
+  { lat: 8.474427727052605, lng: 124.64700579643251 },
+  { lat: 8.47441711161465, lng: 124.6467161178589 },
+  { lat: 8.474958498576875, lng: 124.6467161178589 },
+  { lat: 8.474998686427247, lng: 124.64370131492616 },
+  { lat: 8.47377835251348, lng: 124.6434384584427 }
+];
+
+const NAZARETH_LEAFLET_POSITIONS = NAZARETH_RAW_COORDS.map(c => [c.lat, c.lng]);
+
+const turfCoords = NAZARETH_RAW_COORDS.map(c => [c.lng, c.lat]);
+if (turfCoords[0][0] !== turfCoords[turfCoords.length - 1][0] || turfCoords[0][1] !== turfCoords[turfCoords.length - 1][1]) {
+  turfCoords.push(turfCoords[0]); 
+}
+const NAZARETH_TURF_POLYGON = turf.polygon([turfCoords]);
+
+/* ==========================================
+   GEOMAN DRAWING CONTROLS
    ========================================== */
 const GeomanControls = ({ onShapeCreated, setMapInstance, zoneColor }) => {
   const map = useMap();
@@ -64,7 +117,7 @@ const GeomanControls = ({ onShapeCreated, setMapInstance, zoneColor }) => {
 };
 
 /* ==========================================
-    MAIN DUAL-MODE MODAL
+   MAIN DUAL-MODE MODAL
    ========================================== */
 const AddZoneModal = ({ isOpen, onClose, onAddZone, onUpdateZone, onNotify, existingZones = [], mode = 'add', selectedZone = null }) => {
   const [formData, setFormData] = useState({
@@ -89,16 +142,29 @@ const AddZoneModal = ({ isOpen, onClose, onAddZone, onUpdateZone, onNotify, exis
 
   if (!isOpen) return null;
 
-  // ✅ NEW FUNCTION: Toggle Adjust Mode programmatically
   const toggleAdjustPoints = () => {
     if (mapInstance) {
       const isEditing = mapInstance.pm.globalEditEnabled();
       mapInstance.pm.toggleGlobalEditMode();
-      
-      // Visual feedback to the user via console or optional state
-      if (!isEditing) {
-        console.log("Adjust Points enabled: You can now drag the white dots.");
-      }
+    }
+  };
+
+  const checkWithinNazareth = (newCoords) => {
+    try {
+      const formatToTurf = (path) => {
+        const points = Array.isArray(path[0]) ? path[0] : path;
+        const coords = points.map(p => [p.lng, p.lat]);
+        if (coords[0][0] !== coords[coords.length - 1][0] || coords[0][1] !== coords[coords.length - 1][1]) {
+          coords.push(coords[0]);
+        }
+        return turf.polygon([coords]);
+      };
+
+      const drawnPoly = formatToTurf(newCoords);
+      return turf.booleanWithin(drawnPoly, NAZARETH_TURF_POLYGON);
+    } catch (err) {
+      console.error("Geofence Check Error:", err);
+      return false; 
     }
   };
 
@@ -150,41 +216,58 @@ const AddZoneModal = ({ isOpen, onClose, onAddZone, onUpdateZone, onNotify, exis
   const handleSubmit = (e) => {
     e.preventDefault();
 
-    // 1. Check if coordinates exist using the onNotify prop
     if (!formData.coordinates) {
       return onNotify("Please draw a zone boundary on the map first!", "error");
     }
 
-    // 2. Check for overlaps and provide sleek feedback
+    if (!checkWithinNazareth(formData.coordinates)) {
+      return onNotify("Action Denied: Zones can only be created entirely within the Nazareth boundary.", "error");
+    }
+
     const overlappedZoneName = checkOverlap(formData.coordinates);
     if (overlappedZoneName) {
       return onNotify(`Boundary overlaps with "${overlappedZoneName}". Please adjust.`, "error");
     }
     
-    // 3. Process the save/update
     if (mode === 'edit') {
       onUpdateZone(selectedZone.zone_id, formData);
     } else {
       onAddZone(formData);
     }
     clearMap(); 
-    onClose(); //After complete mo auto close ang modal
+    onClose(); 
   };
 
   return (
-    <div className="fixed inset-0 z-3000 flex items-center justify-center bg-black/40 backdrop-blur-[1px] p-4">
+    <div className="fixed inset-0 z-[3000] flex items-center justify-center bg-black/40 backdrop-blur-[1px] p-4">
       <div className="bg-white rounded-xl w-full max-w-5xl shadow-2xl overflow-hidden flex flex-col h-[85vh]">
         
-        <div className="px-10 py-4 border-b border-gray-100 bg-white flex justify-between items-center">
+        {/* ✅ HEADER WITH DEAD-CENTER LEGEND */}
+        <div className="px-10 py-4 border-b border-gray-100 bg-white flex justify-between items-center relative">
+          
+          {/* Left Title Area */}
           <div>
             <h3 className="text-3xl font-bold text-gray-800">
               {mode === 'edit' ? 'Edit Zone Boundaries' : 'Create New Zone'}
             </h3>
             <p className="text-gray-400 text-sm mt-1">
-               {mode === 'edit' ? `Adjusting ${selectedZone?.zone_name}` : 'Define zone details and boundaries'}
+               {mode === 'edit' ? `Adjusting ${selectedZone?.zone_name}` : 'Define zone details and boundaries.'}
             </p>
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"><X size={25} /></button>
+
+          {/* Centered Notice Badge */}
+          <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-3 bg-blue-50 px-5 py-2.5 rounded-xl border border-blue-200 shadow-sm pointer-events-none">
+              <div className="w-8 h-0 border-t-[3px] border-dashed border-blue-500"></div>
+              <div className="flex flex-col">
+                <span className="text-[13px] font-extrabold text-blue-800 leading-tight">Nazareth Boundary</span>
+                <span className="text-[11px] font-semibold text-blue-600 leading-tight">Draw zones inside the dashed line</span>
+              </div>
+          </div>
+
+          {/* Right Close Button */}
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors cursor-pointer">
+            <X size={25} />
+          </button>
         </div>
 
         <div className="flex flex-1 overflow-hidden">
@@ -215,7 +298,6 @@ const AddZoneModal = ({ isOpen, onClose, onAddZone, onUpdateZone, onNotify, exis
                 <MousePointer2 size={18} className="text-green-400" /> Start Drawing
               </button>
 
-              {/* ADJUST POINTS BUTTON */}
               <button 
                 type="button" 
                 onClick={toggleAdjustPoints} 
@@ -231,8 +313,16 @@ const AddZoneModal = ({ isOpen, onClose, onAddZone, onUpdateZone, onNotify, exis
           </div>
 
           <div className="flex-1 relative bg-gray-50">
-            <MapContainer center={[8.4822, 124.6472]} zoom={15} className="h-full w-full">
+            <MapContainer center={[8.4715, 124.6475]} zoom={15} className="h-full w-full">
               <TileLayer url="https://{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}" subdomains={['mt0', 'mt1', 'mt2', 'mt3']} attribution='&copy; Google Maps' />
+
+              {/* NON-INTERACTIVE DASHED BOUNDARY */}
+              <Polygon 
+                positions={NAZARETH_LEAFLET_POSITIONS}
+                pmIgnore={true}
+                interactive={false}
+                pathOptions={{ color: '#3b82f6', fillOpacity: 0.03, weight: 3, dashArray: '8, 8' }}
+              />
 
               {existingZones
                 .filter(z => z.zone_id !== selectedZone?.zone_id)
