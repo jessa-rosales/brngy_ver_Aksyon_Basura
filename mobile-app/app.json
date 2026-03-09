@@ -4,11 +4,11 @@
     "slug": "aksyon-basura",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/aksyon_basura_490x490.png",
+    "icon": "./assets/logo7.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/aksyon_basura_490x490.png",
+      "image": "./assets/logo7.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
@@ -17,7 +17,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/aksyon_basura_490x490.png",
+        "foregroundImage": "./assets/logo7.png",
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
@@ -34,7 +34,7 @@
       "package": "com.jejerogo.mobileapp"
     },
     "web": {
-      "favicon": "./assets/aksyon_basura_490x490.png"
+      "favicon": "./assets/logo7.png"
     },
     "plugins": [
       "@react-native-community/datetimepicker",
@@ -51,6 +51,17 @@
           "locationAlwaysPermission": "Allow Aksyon Basura to track your route for waste collection."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "025c2c9c-ebfc-4fad-92ee-015a5147c2bf"
+      }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/025c2c9c-ebfc-4fad-92ee-015a5147c2bf"
+    }
   }
 }
