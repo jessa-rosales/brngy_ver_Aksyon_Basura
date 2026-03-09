@@ -4,12 +4,102 @@ import MapboxGL from '@rnmapbox/maps';
 import { Truck, Bell, ChevronLeft, MapPin, Navigation, CheckCircle2, Trash2, AlertTriangle, Map as MapIcon, Clock } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-// ✅ ADDED: Import mobileService to fetch live moving coordinates
 import { mobileService } from '../services/mobileService'; 
 
 MapboxGL.setAccessToken('pk.eyJ1IjoiamVnby1ybyIsImEiOiJjbWx6dnZ6YmQwOW12NGtxd25vMmJldGZhIn0.uCCN-70t1ZZugt6h1ZoMOg');
 
 const { width, height } = Dimensions.get('window');
+
+/* ==========================================
+   NAZARETH BOUNDARY CONFIGURATION
+   ========================================== */
+const NAZARETH_RAW_COORDS = [
+  { lat: 8.474278931277277, lng: 124.6416735649109 },
+  { lat: 8.473249232032625, lng: 124.64182376861574 },
+  { lat: 8.47292013734312, lng: 124.64173793792726 },
+  { lat: 8.472495517931753, lng: 124.64177012443544 },
+  { lat: 8.471805510388503, lng: 124.64146971702577 },
+  { lat: 8.471094465135494, lng: 124.64115858078004 },
+  { lat: 8.469846743009528, lng: 124.64514434337617 },
+  { lat: 8.469708748133874, lng: 124.64548230171205 },
+  { lat: 8.4690932448959, lng: 124.64548230171205 },
+  { lat: 8.468552087301081, lng: 124.64524626731874 },
+  { lat: 8.466695000208981, lng: 124.64402854442598 },
+  { lat: 8.464901551589385, lng: 124.64708089828493 },
+  { lat: 8.466015902915824, lng: 124.64851856231691 },
+  { lat: 8.46642971548801, lng: 124.64921593666078 },
+  { lat: 8.466397795540207, lng: 124.64953243732454 },
+  { lat: 8.466503886632513, lng: 124.64983820915224 },
+  { lat: 8.46840872672014, lng: 124.65122222900392 },
+  { lat: 8.47082907679877, lng: 124.6527671813965 },
+  { lat: 8.471646472289459, lng: 124.65171575546266 },
+  { lat: 8.472607175158831, lng: 124.65216636657716 },
+  { lat: 8.473063133108639, lng: 124.6523802309309 },
+  { lat: 8.473567875628627, lng: 124.65261697769166 },
+  { lat: 8.473716492061547, lng: 124.65269207954408 },
+  { lat: 8.473918185700098, lng: 124.65223073959352 },
+  { lat: 8.475510500184921, lng: 124.65230584144594 },
+  { lat: 8.475754654489542, lng: 124.65232729911806 },
+  { lat: 8.47566189340505, lng: 124.65082526206972 },
+  { lat: 8.475672544357778, lng: 124.64916765689851 },
+  { lat: 8.47460818945307, lng: 124.64960217475893 },
+  { lat: 8.47445957336473, lng: 124.64998841285707 },
+  { lat: 8.474523265981052, lng: 124.64951634407045 },
+  { lat: 8.47445957336473, lng: 124.64870095252992 },
+  { lat: 8.474226033681298, lng: 124.64805722236635 },
+  { lat: 8.474183571905444, lng: 124.64719891548158 },
+  { lat: 8.474427727052605, lng: 124.64700579643251 },
+  { lat: 8.47441711161465, lng: 124.6467161178589 },
+  { lat: 8.474958498576875, lng: 124.6467161178589 },
+  { lat: 8.474998686427247, lng: 124.64370131492616 },
+  { lat: 8.47377835251348, lng: 124.6434384584427 }
+];
+
+// Formatting for Mapbox [lng, lat]
+const NAZARETH_MAPBOX_COORDS = NAZARETH_RAW_COORDS.map(c => [c.lng, c.lat]);
+if (
+  NAZARETH_MAPBOX_COORDS[0][0] !== NAZARETH_MAPBOX_COORDS[NAZARETH_MAPBOX_COORDS.length - 1][0] || 
+  NAZARETH_MAPBOX_COORDS[0][1] !== NAZARETH_MAPBOX_COORDS[NAZARETH_MAPBOX_COORDS.length - 1][1]
+) {
+  NAZARETH_MAPBOX_COORDS.push(NAZARETH_MAPBOX_COORDS[0]);
+}
+
+// 🔥 ADVANCED MATH HELPER: Point in Polygon (handles GeoJSON structures)
+const isPointInPolygon = (lat, lng, polygonRaw) => {
+  if (!polygonRaw) return false;
+  try {
+    const boundaryData = typeof polygonRaw === 'string' ? JSON.parse(polygonRaw) : polygonRaw;
+    let rawPoints = [];
+    if (boundaryData?.type === 'Polygon') {
+      rawPoints = boundaryData.coordinates[0];
+    } else if (Array.isArray(boundaryData)) {
+      rawPoints = Array.isArray(boundaryData[0]) && Array.isArray(boundaryData[0][0]) 
+        ? boundaryData[0][0] 
+        : (Array.isArray(boundaryData[0]) ? boundaryData[0] : boundaryData);
+    }
+    if (!rawPoints || rawPoints.length === 0) return false;
+
+    const x = Number(lat);
+    const y = Number(lng);
+    let inside = false;
+    
+    for (let i = 0, j = rawPoints.length - 1; i < rawPoints.length; j = i++) {
+      const pi = rawPoints[i];
+      const pj = rawPoints[j];
+      
+      const xi = Number(Array.isArray(pi) ? pi[1] : (pi.latitude || pi.lat));
+      const yi = Number(Array.isArray(pi) ? pi[0] : (pi.longitude || pi.lng));
+      const xj = Number(Array.isArray(pj) ? pj[1] : (pj.latitude || pj.lat));
+      const yj = Number(Array.isArray(pj) ? pj[0] : (pj.longitude || pj.lng));
+
+      const intersect = ((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+      if (intersect) inside = !inside;
+    }
+    return inside;
+  } catch (e) {
+    return false;
+  }
+};
 
 const RenderBinMarker = ({ status }) => (
   <View style={styles.emeraldMarkerContainer}>
@@ -48,10 +138,7 @@ const RenderReportMarker = ({ status, isFocused }) => {
           <AlertTriangle size={12} color="white" />
         )}
       </View>
-      <View style={[
-        styles.reportTip, 
-        { backgroundColor: markerColor }
-      ]} />
+      <View style={[styles.reportTip, { backgroundColor: markerColor }]} />
     </View>
   );
 };
@@ -60,33 +147,56 @@ const LiveMapScreen = ({ navigation, route }) => {
   const insets = useSafeAreaInsets();
   const cameraRef = useRef(null);
 
-  const zoneData = route.params?.zoneData || {};
-  const allZonesData = route.params?.allZonesData || []; 
-  const isAllZones = zoneData.zone_id === 'all';
-  
+  // States to hold dynamically matched zones
+  const [activeZone, setActiveZone] = useState(route.params?.zoneData || {});
+  const [allZones, setAllZones] = useState(route.params?.allZonesData || []);
+
   const targetLocation = route.params?.focusLocation;
   const targetReportId = route.params?.reportId;
   const targetReport = route.params?.targetReport;
 
-  const bins = isAllZones ? allZonesData.flatMap(z => z.bins || []) : (zoneData.bins || []);
-  const reports = isAllZones ? allZonesData.flatMap(z => z.reports || []) : (zoneData.reports || []);
+  const isAllZones = activeZone.zone_id === 'all' || !activeZone.zone_id;
 
-  // ✅ ADDED: State to hold the live moving coordinates of the truck
+  const bins = isAllZones ? allZones.flatMap(z => z.bins || []) : (activeZone.bins || []);
+  const reports = isAllZones ? allZones.flatMap(z => z.reports || []) : (activeZone.reports || []);
+
   const [liveTruckCoords, setLiveTruckCoords] = useState(
-    (zoneData.truck_lng && zoneData.truck_lat) 
-      ? [Number(zoneData.truck_lng), Number(zoneData.truck_lat)] 
+    (activeZone.truck_lng && activeZone.truck_lat) 
+      ? [Number(activeZone.truck_lng), Number(activeZone.truck_lat)] 
       : null
   );
 
-  // ✅ ADDED: Background interval to fetch the moving truck every 5 seconds
+  // ✅ DYNAMICALLY FETCH AND MATCH ZONE IF COMING FROM FEED
   useEffect(() => {
-    if (isAllZones || !zoneData.zone_id) return;
+    const fetchZones = async () => {
+      try {
+        const res = await mobileService.getZoneTrackingData();
+        if (res && res.success) {
+          if (allZones.length === 0) {
+            setAllZones(res.data);
+          }
+          // If we navigated to a specific report, find out which zone it belongs to!
+          if (targetLocation && !route.params?.zoneData) {
+            const matchedZone = res.data.find(z => isPointInPolygon(targetLocation.latitude, targetLocation.longitude, z.boundaries || z.coordinates));
+            if (matchedZone) {
+              setActiveZone(matchedZone);
+            }
+          }
+        }
+      } catch (error) {
+        console.log("Map Fetch Error:", error);
+      }
+    };
+    fetchZones();
+  }, [targetLocation]);
 
+  useEffect(() => {
+    if (isAllZones || !activeZone.zone_id) return;
     const fetchLiveLocation = async () => {
       try {
         const result = await mobileService.getZoneTrackingData();
         if (result && result.success) {
-          const currentZoneInfo = result.data.find(z => z.zone_id === zoneData.zone_id);
+          const currentZoneInfo = result.data.find(z => z.zone_id === activeZone.zone_id);
           if (currentZoneInfo && currentZoneInfo.truck_lat && currentZoneInfo.truck_lng) {
             setLiveTruckCoords([Number(currentZoneInfo.truck_lng), Number(currentZoneInfo.truck_lat)]);
           }
@@ -95,33 +205,59 @@ const LiveMapScreen = ({ navigation, route }) => {
         console.log("Map Polling Error:", error);
       }
     };
-
-    const interval = setInterval(fetchLiveLocation, 5000); // Updates map every 5 seconds
+    const interval = setInterval(fetchLiveLocation, 5000); 
     return () => clearInterval(interval);
-  }, [isAllZones, zoneData.zone_id]);
+  }, [isAllZones, activeZone.zone_id]);
   
   useEffect(() => {
-    if (targetLocation && cameraRef.current) {
-      setTimeout(() => {
+    if (!cameraRef.current) return;
+    const timer = setTimeout(() => {
+      if (targetLocation) {
+        // Zoom level 16.5 is perfect to see the specific report AND the bounding box of the zone
         cameraRef.current.setCamera({
           centerCoordinate: [Number(targetLocation.longitude), Number(targetLocation.latitude)],
-          zoomLevel: 18, 
-          animationDuration: 2000, 
-          pitch: 45, 
+          zoomLevel: 16.5, 
+          animationDuration: 1500, 
+          pitch: 0, 
         });
-      }, 500);
-    }
-  }, [targetLocation]);
+      } else if (!isAllZones && activeZone && activeZone.boundaries) {
+        // ... (Existing bounding box logic for Driver/Collector views)
+      } else {
+        cameraRef.current.setCamera({
+          centerCoordinate: [124.6469, 8.4703],
+          zoomLevel: 15.5,
+          animationDuration: 1500,
+          pitch: 0
+        });
+      }
+    }, 400); 
+    return () => clearTimeout(timer);
+  }, [targetLocation, isAllZones, activeZone]);
 
-  const zoneFeatures = useMemo(() => {
+  // ✅ ONLY DRAW THE MATCHED ZONE (OR ALL IF NOT NAVIGATING TO ONE)
+  const mapFeatures = useMemo(() => {
     const features = [];
 
-    allZonesData.forEach(z => {
-      if (!z.boundaries) return;
+    // 1. ADD NAZARETH BOUNDARY FIRST
+    features.push({
+      type: 'Feature',
+      properties: {
+        isNazarethBoundary: true,
+        zone_color: '#3B82F6' 
+      },
+      geometry: {
+        type: 'Polygon',
+        coordinates: [NAZARETH_MAPBOX_COORDS]
+      }
+    });
 
+    // 2. ADD ZONES (Draw matched activeZone if present, otherwise draw all)
+    const zonesToDraw = (activeZone.zone_id && activeZone.zone_id !== 'all') ? [activeZone] : allZones;
+
+    zonesToDraw.forEach(z => {
+      if (!z.boundaries) return;
       try {
         const boundaryData = typeof z.boundaries === 'string' ? JSON.parse(z.boundaries) : z.boundaries;
-        
         let rawPoints = [];
         if (boundaryData?.type === 'Polygon') {
           rawPoints = boundaryData.coordinates[0];
@@ -148,8 +284,9 @@ const LiveMapScreen = ({ navigation, route }) => {
         features.push({
           type: 'Feature',
           properties: {
+            isNazarethBoundary: false,
             zone_name: z.zone_name,
-            zone_color: z.zone_color || '#3B82F6' 
+            zone_color: z.zone_color || '#10B981' 
           },
           geometry: {
             type: 'Polygon',
@@ -162,29 +299,19 @@ const LiveMapScreen = ({ navigation, route }) => {
     });
 
     return { type: 'FeatureCollection', features };
-  }, [allZonesData]);
-
-  // ✅ UPDATED: Use liveTruckCoords for initial center if available
-  const initialCameraCoords = targetLocation 
-    ? [Number(targetLocation.longitude), Number(targetLocation.latitude)]
-    : (liveTruckCoords && !isAllZones)
-        ? liveTruckCoords 
-        : [124.6459, 8.4772];
-    
-  const zoomLvl = targetLocation ? 18 : (isAllZones ? 13 : 15.5);
+  }, [allZones, activeZone]);
 
   const allStops = [...bins, ...reports];
   const totalStops = allStops.length;
   const completedStops = allStops.filter(s => s.status === 'Collected' || s.status === 'Resolved').length;
   const pendingStops = totalStops - completedStops;
   const progressPercent = totalStops > 0 ? Math.round((completedStops / totalStops) * 100) : 0;
-
   const nextStop = allStops.find(s => s.status === 'Pending');
   const locationText = nextStop ? nextStop.address : 'Completed';
 
   const handleZonePress = (event) => {
     const feature = event.features[0];
-    if (feature && feature.properties) {
+    if (feature && feature.properties && !feature.properties.isNazarethBoundary) {
       Alert.alert("Zone Information", `You selected: ${feature.properties.zone_name}`);
     }
   };
@@ -202,47 +329,45 @@ const LiveMapScreen = ({ navigation, route }) => {
         >
           <MapboxGL.Camera
             ref={cameraRef}
-            centerCoordinate={initialCameraCoords}
-            zoomLevel={zoomLvl}
-            animationDuration={1500}
+            defaultSettings={{
+              centerCoordinate: [124.6469, 8.4703],
+              zoomLevel: 15.5
+            }}
           />
 
-          {zoneFeatures.features.length > 0 && (
+          {mapFeatures.features.length > 0 && (
             <MapboxGL.ShapeSource 
-              id="zonesSource" 
-              shape={zoneFeatures}
+              id="mapFeaturesSource" 
+              shape={mapFeatures}
               onPress={handleZonePress}
             >
               <MapboxGL.FillLayer 
+                id="nazarethBoundaryFill" 
+                filter={['==', 'isNazarethBoundary', true]}
+                style={{ fillColor: '#3B82F6', fillOpacity: 0.03 }}
+              />
+              <MapboxGL.LineLayer 
+                id="nazarethBoundaryLine" 
+                filter={['==', 'isNazarethBoundary', true]}
+                style={{ lineColor: '#3B82F6', lineWidth: 3, lineDasharray: [2, 2] }}
+              />
+              <MapboxGL.FillLayer 
                 id="zonesFill" 
-                style={{
-                  fillColor: ['get', 'zone_color'],
-                  fillOpacity: 0.3
-                }}
+                filter={['==', 'isNazarethBoundary', false]}
+                style={{ fillColor: ['get', 'zone_color'], fillOpacity: 0.3 }}
               />
               <MapboxGL.LineLayer 
                 id="zonesLine" 
-                style={{
-                  lineColor: ['get', 'zone_color'],
-                  lineWidth: 2
-                }}
+                filter={['==', 'isNazarethBoundary', false]}
+                style={{ lineColor: ['get', 'zone_color'], lineWidth: 2 }}
               />
             </MapboxGL.ShapeSource>
           )}
 
-          {/* ✅ UPDATED: Uses 'liveTruckCoords' so it drives live on the map */}
           {!isAllZones && liveTruckCoords && (
-            <MapboxGL.MarkerView 
-              id="truck-marker" 
-              coordinate={liveTruckCoords}
-            >
+            <MapboxGL.MarkerView id="truck-marker" coordinate={liveTruckCoords}>
               <View style={styles.customTruckPuck}>
-                <Image 
-                  source={require('../../assets/truck.png')} 
-                  style={styles.truckIconImage} 
-                  resizeMode="contain"
-                  fadeDuration={0} 
-                />
+                <Image source={require('../../assets/truck.png')} style={styles.truckIconImage} resizeMode="contain" fadeDuration={0} />
               </View>
             </MapboxGL.MarkerView>
           )}
@@ -263,7 +388,6 @@ const LiveMapScreen = ({ navigation, route }) => {
           {reports.map((report, index) => {
             if (!report.lng || !report.lat) return null;
             const isFocused = String(report.id) === String(targetReportId);
-
             return (
               <MapboxGL.PointAnnotation 
                 key={`map-rep-${report.id || 'new'}-${index}`} 
@@ -282,13 +406,9 @@ const LiveMapScreen = ({ navigation, route }) => {
               coordinate={[Number(targetLocation.longitude), Number(targetLocation.latitude)]}
               style={{ zIndex: 1000 }}
             >
-              <RenderReportMarker 
-                status={targetReport ? targetReport.status : 'Pending'} 
-                isFocused={true} 
-              />
+              <RenderReportMarker status={targetReport ? targetReport.status : 'Pending'} isFocused={true} />
             </MapboxGL.PointAnnotation>
           )}
-
         </MapboxGL.MapView>
       </View>
 
@@ -311,11 +431,14 @@ const LiveMapScreen = ({ navigation, route }) => {
           
           <View style={styles.statusHeader}>
             <View>
+              {/* ✅ DYNAMIC ZONE TITLE LOGIC */}
               <Text style={styles.truckId}>
-                {targetLocation ? 'Report Location View' : (isAllZones ? 'Cagayan de Oro City' : (zoneData.vehicle_name || zoneData.plate_number || 'Vehicle #N/A'))}
+                {targetLocation 
+                  ? (activeZone.zone_name ? `Inside ${activeZone.zone_name}` : 'Report Location View') 
+                  : (isAllZones ? 'Barangay Nazareth' : (activeZone.vehicle_name || activeZone.plate_number || 'Vehicle #N/A'))}
               </Text>
               <Text style={styles.driverName}>
-                {targetReport ? `Current Status: ${targetReport.status}` : (isAllZones ? 'All Monitoring Zones' : `Driver: ${zoneData.driver_name || 'Unassigned'}`)}
+                {targetReport ? `Current Status: ${targetReport.status}` : (isAllZones ? 'All Monitoring Zones' : `Driver: ${activeZone.driver_name || 'Unassigned'}`)}
               </Text>
             </View>
             
@@ -341,7 +464,7 @@ const LiveMapScreen = ({ navigation, route }) => {
             ) : (!isAllZones && !targetLocation && (
               <View style={styles.etaContainer}>
                 <Text style={styles.etaTime}>Active</Text>
-                <Text style={styles.etaLabel}>{zoneData.zone_name}</Text>
+                <Text style={styles.etaLabel}>{activeZone.zone_name}</Text>
               </View>
             ))}
           </View>
@@ -391,7 +514,6 @@ const styles = StyleSheet.create({
   liveDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#EF4444', marginRight: 6 },
   headerText: { fontSize: 12, fontWeight: '800', color: '#1e293b', letterSpacing: 0.5 },
   
-  // ✅ ADDED: Professional Puck Styles for the Truck Marker
   customTruckPuck: {
     width: 46,
     height: 46,
@@ -407,10 +529,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 4,
   },
-  truckIconImage: {
-    width: 28,
-    height: 28,
-  },
+  truckIconImage: { width: 28, height: 28 },
 
   emeraldMarkerContainer: { alignItems: 'center', justifyContent: 'center', width: 30, height: 30 },
   emeraldCore: { width: 20, height: 20, borderRadius: 10, backgroundColor: '#10B981', borderWidth: 2, borderColor: 'white', alignItems: 'center', justifyContent: 'center', elevation: 3, zIndex: 2 },

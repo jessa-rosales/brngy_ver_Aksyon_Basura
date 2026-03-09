@@ -1,15 +1,139 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Modal, Platform, StatusBar, ActivityIndicator, RefreshControl, Image, Dimensions } from 'react-native';
-import { ChevronDown, MapPin, Truck, Clock, CheckCircle2, AlertCircle, Camera, Navigation, Trash2, AlertTriangle, Map as MapIcon, X } from 'lucide-react-native';
+import { ChevronDown, MapPin, Truck, Clock, CheckCircle2, AlertCircle, Camera, Navigation, Trash2, AlertTriangle, Map as MapIcon, X, BellRing, Bell } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as Location from 'expo-location'; 
+import * as Notifications from 'expo-notifications'; // ✅ ADDED FOR PUSH NOTIFICATIONS
 import { mobileService } from '../services/mobileService'; 
 import CustomAlert from '../components/CustomAlert';
 
 const { width } = Dimensions.get('window');
 
+// ✅ CONFIGURE NOTIFICATIONS (Tells the app to show banners and play sounds)
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
+
+// --- 🔥 MATH HELPER: Haversine Distance (Meters) ---
+const getDistanceInMeters = (lat1, lon1, lat2, lon2) => {
+  if (!lat1 || !lon1 || !lat2 || !lon2) return Infinity;
+  const R = 6371e3; 
+  const rad = Math.PI / 180;
+  const dLat = (lat2 - lat1) * rad;
+  const dLon = (lon2 - lon1) * rad;
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1 * rad) * Math.cos(lat2 * rad) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+};
+
+/* ==========================================
+   NAZARETH BOUNDARY CONFIGURATION
+   ========================================== */
+const NAZARETH_RAW_COORDS = [
+  { lat: 8.474278931277277, lng: 124.6416735649109 },
+  { lat: 8.473249232032625, lng: 124.64182376861574 },
+  { lat: 8.47292013734312, lng: 124.64173793792726 },
+  { lat: 8.472495517931753, lng: 124.64177012443544 },
+  { lat: 8.471805510388503, lng: 124.64146971702577 },
+  { lat: 8.471094465135494, lng: 124.64115858078004 },
+  { lat: 8.469846743009528, lng: 124.64514434337617 },
+  { lat: 8.469708748133874, lng: 124.64548230171205 },
+  { lat: 8.4690932448959, lng: 124.64548230171205 },
+  { lat: 8.468552087301081, lng: 124.64524626731874 },
+  { lat: 8.466695000208981, lng: 124.64402854442598 },
+  { lat: 8.464901551589385, lng: 124.64708089828493 },
+  { lat: 8.466015902915824, lng: 124.64851856231691 },
+  { lat: 8.46642971548801, lng: 124.64921593666078 },
+  { lat: 8.466397795540207, lng: 124.64953243732454 },
+  { lat: 8.466503886632513, lng: 124.64983820915224 },
+  { lat: 8.46840872672014, lng: 124.65122222900392 },
+  { lat: 8.47082907679877, lng: 124.6527671813965 },
+  { lat: 8.471646472289459, lng: 124.65171575546266 },
+  { lat: 8.472607175158831, lng: 124.65216636657716 },
+  { lat: 8.473063133108639, lng: 124.6523802309309 },
+  { lat: 8.473567875628627, lng: 124.65261697769166 },
+  { lat: 8.473716492061547, lng: 124.65269207954408 },
+  { lat: 8.473918185700098, lng: 124.65223073959352 },
+  { lat: 8.475510500184921, lng: 124.65230584144594 },
+  { lat: 8.475754654489542, lng: 124.65232729911806 },
+  { lat: 8.47566189340505, lng: 124.65082526206972 },
+  { lat: 8.475672544357778, lng: 124.64916765689851 },
+  { lat: 8.47460818945307, lng: 124.64960217475893 },
+  { lat: 8.47445957336473, lng: 124.64998841285707 },
+  { lat: 8.474523265981052, lng: 124.64951634407045 },
+  { lat: 8.47445957336473, lng: 124.64870095252992 },
+  { lat: 8.474226033681298, lng: 124.64805722236635 },
+  { lat: 8.474183571905444, lng: 124.64719891548158 },
+  { lat: 8.474427727052605, lng: 124.64700579643251 },
+  { lat: 8.47441711161465, lng: 124.6467161178589 },
+  { lat: 8.474958498576875, lng: 124.6467161178589 },
+  { lat: 8.474998686427247, lng: 124.64370131492616 },
+  { lat: 8.47377835251348, lng: 124.6434384584427 }
+];
+
+const isPointInNazareth = (lat, lng) => {
+  let inside = false;
+  const coords = NAZARETH_RAW_COORDS;
+  
+  for (let i = 0, j = coords.length - 1; i < coords.length; j = i++) {
+    const xi = coords[i].lat, yi = coords[i].lng;
+    const xj = coords[j].lat, yj = coords[j].lng;
+
+    const intersect = ((yi > lng) !== (yj > lng)) && (lat < (xj - xi) * (lng - yi) / (yj - yi) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+};
+
+const isPointInPolygon = (lat, lng, rawBoundaries) => {
+  if (!rawBoundaries) return false;
+  try {
+    let data = typeof rawBoundaries === 'string' ? JSON.parse(rawBoundaries) : rawBoundaries;
+    if (data.coordinates) data = data.coordinates;
+    
+    while (Array.isArray(data) && Array.isArray(data[0]) && Array.isArray(data[0][0])) {
+      data = data[0];
+    }
+    
+    let rawPoints = Array.isArray(data[0]) && typeof data[0][0] !== 'object' && data[0].length === 2 
+        ? data 
+        : (Array.isArray(data[0]) ? data[0] : data);
+
+    if (!rawPoints || rawPoints.length === 0) return false;
+
+    const x = Number(lat);
+    const y = Number(lng);
+    let inside = false;
+
+    for (let i = 0, j = rawPoints.length - 1; i < rawPoints.length; j = i++) {
+      const pi = rawPoints[i];
+      const pj = rawPoints[j];
+      
+      const xi = Number(Array.isArray(pi) ? pi[1] : (pi.latitude || pi.lat));
+      const yi = Number(Array.isArray(pi) ? pi[0] : (pi.longitude || pi.lng));
+      const xj = Number(Array.isArray(pj) ? pj[1] : (pj.latitude || pj.lat));
+      const yj = Number(Array.isArray(pj) ? pj[0] : (pj.longitude || pj.lng));
+
+      const intersect = ((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi);
+      if (intersect) inside = !inside;
+    }
+    return inside;
+  } catch (e) {
+    return false;
+  }
+};
+
 const TrackScreen = ({ navigation }) => {
   const [zonesData, setZonesData] = useState([]);
+  const [hasAutoLocalized, setHasAutoLocalized] = useState(false); 
+  const [isOutsideNazareth, setIsOutsideNazareth] = useState(false); 
   
   const [selectedIdentifier, setSelectedIdentifier] = useState({ zone_id: 'all', task_id: null });
   const [modalVisible, setModalVisible] = useState(false);
@@ -17,9 +141,12 @@ const TrackScreen = ({ navigation }) => {
   const [refreshing, setRefreshing] = useState(false);
   
   const [evidencePhoto, setEvidencePhoto] = useState(null);
-
-  // State to control the Custom Alert
   const [customAlert, setCustomAlert] = useState({ visible: false, title: '', message: '', type: 'info' });
+
+  // PROXIMITY NOTIFICATION STATES
+  const [isNotifyActive, setIsNotifyActive] = useState(false);
+  const [notifyTargetLocation, setNotifyTargetLocation] = useState(null);
+  const [truckDistance, setTruckDistance] = useState(null);
 
   const isToday = (dateString) => {
     if (!dateString) return false;
@@ -30,13 +157,45 @@ const TrackScreen = ({ navigation }) => {
            itemDate.getFullYear() === today.getFullYear();
   };
 
-  // Determines if the timestamp is within the last 5 hours
   const isWithin5Hours = (dateString) => {
     if (!dateString) return false;
     const itemTime = new Date(dateString).getTime();
     const currentTime = new Date().getTime();
     const hoursDiff = (currentTime - itemTime) / (1000 * 60 * 60);
     return hoursDiff <= 5;
+  };
+
+  const autoDetectUserZone = async (loadedZones) => {
+    if (hasAutoLocalized || loadedZones.length === 0) return;
+    
+    try {
+      let { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        console.log('Permission to access location was denied.');
+        setHasAutoLocalized(true);
+        return;
+      }
+
+      let location = await Location.getCurrentPositionAsync({});
+      const userLat = location.coords.latitude;
+      const userLng = location.coords.longitude;
+
+      if (!isPointInNazareth(userLat, userLng)) {
+        setIsOutsideNazareth(true);
+        setSelectedIdentifier({ zone_id: 'all', task_id: null }); 
+      } else {
+        setIsOutsideNazareth(false);
+        for (const zone of loadedZones) {
+          if (isPointInPolygon(userLat, userLng, zone.boundaries)) {
+            setSelectedIdentifier({ zone_id: zone.zone_id, task_id: zone.task_id || null });
+            break; 
+          }
+        }
+      }
+      setHasAutoLocalized(true); 
+    } catch (error) {
+      setHasAutoLocalized(true);
+    }
   };
 
   const fetchTrackingData = async () => {
@@ -46,12 +205,10 @@ const TrackScreen = ({ navigation }) => {
         
         const processedData = result.data.map(zone => ({
             ...zone,
-            // Reset old bins to Pending for today's route
             bins: (zone.bins || []).map(bin => ({
                 ...bin,
                 status: isToday(bin.updated_at) ? bin.status : 'Pending'
             })),
-            // FILTER REPORTS: Keep if Pending/In Progress, or if Resolved within the last 5 hours!
             reports: (zone.reports || []).filter(report => {
                 if (report.status === 'Resolved') {
                     return isWithin5Hours(report.updated_at);
@@ -61,6 +218,52 @@ const TrackScreen = ({ navigation }) => {
         }));
 
         setZonesData(processedData);
+
+        if (!hasAutoLocalized) {
+          autoDetectUserZone(processedData);
+        }
+
+        // ✅ HANDLE PROXIMITY NOTIFICATION LOGIC
+        if (isNotifyActive && notifyTargetLocation && selectedIdentifier.zone_id !== 'all') {
+          const currentZoneData = processedData.find(z => z.zone_id === selectedIdentifier.zone_id);
+          
+          if (currentZoneData && currentZoneData.truck_lat && currentZoneData.truck_lng) {
+            const distance = getDistanceInMeters(
+              notifyTargetLocation.latitude, 
+              notifyTargetLocation.longitude, 
+              Number(currentZoneData.truck_lat), 
+              Number(currentZoneData.truck_lng)
+            );
+            
+            setTruckDistance(Math.round(distance));
+
+            // ✅ If truck is closer than 20 meters, trigger BOTH alerts
+            if (distance <= 20) {
+              setIsNotifyActive(false);
+              setNotifyTargetLocation(null);
+              setTruckDistance(null);
+              
+              // 1. Trigger Local In-App Alert
+              setCustomAlert({
+                visible: true,
+                title: "Truck Arriving!",
+                message: "The garbage truck is within 20 meters of your location. Please prepare your waste.",
+                type: "success"
+              });
+
+              // 2. Trigger Real OS Push Notification (Vibrates and Drops down from top)
+              await Notifications.scheduleNotificationAsync({
+                content: {
+                  title: "🚛 Garbage Truck is Here!",
+                  body: "The collection truck has arrived within 20 meters of your location.",
+                  sound: true,
+                  priority: Notifications.AndroidNotificationPriority.HIGH,
+                },
+                trigger: null, // null means trigger immediately
+              });
+            }
+          }
+        }
       }
     } catch (error) {
       console.error("Fetch Tracking Data Error:", error);
@@ -74,16 +277,95 @@ const TrackScreen = ({ navigation }) => {
     fetchTrackingData();
     const interval = setInterval(fetchTrackingData, 15000);
     return () => clearInterval(interval);
-  }, []);
+  }, [hasAutoLocalized, isNotifyActive, notifyTargetLocation, selectedIdentifier]); 
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
+    setHasAutoLocalized(false); 
     fetchTrackingData();
   }, []);
 
   const handleZoneSelect = (zone) => {
     setSelectedIdentifier({ zone_id: zone.zone_id, task_id: zone.task_id || null });
     setModalVisible(false);
+    if (isOutsideNazareth) setIsOutsideNazareth(false);
+    
+    if (isNotifyActive) {
+      setIsNotifyActive(false);
+      setNotifyTargetLocation(null);
+      setTruckDistance(null);
+    }
+  };
+
+  // ✅ ENHANCED: Request Notification & Location Permissions
+  const handleNotifyMe = async () => {
+    if (isNotifyActive) {
+      // Toggle off
+      setIsNotifyActive(false);
+      setNotifyTargetLocation(null);
+      setTruckDistance(null);
+      return;
+    }
+
+    try {
+      // 1. Check Location Permissions
+      let { status: locationStatus } = await Location.requestForegroundPermissionsAsync();
+      if (locationStatus !== 'granted') {
+        setCustomAlert({
+          visible: true,
+          title: "Location Needed",
+          message: "We need your location to tell you when the truck is nearby.",
+          type: "warning"
+        });
+        return;
+      }
+
+      // 2. Check Push Notification Permissions
+      const { status: existingNotifStatus } = await Notifications.getPermissionsAsync();
+      let finalNotifStatus = existingNotifStatus;
+      if (existingNotifStatus !== 'granted') {
+        const { status } = await Notifications.requestPermissionsAsync();
+        finalNotifStatus = status;
+      }
+      
+      if (finalNotifStatus !== 'granted') {
+        setCustomAlert({
+          visible: true,
+          title: "Notifications Disabled",
+          message: "You won't receive system pop-ups, but the in-app alert will still work.",
+          type: "warning"
+        });
+      }
+
+      setCustomAlert({
+        visible: true,
+        title: "Activating Radar",
+        message: "Fetching your exact location...",
+        type: "info"
+      });
+
+      // 3. Get Location and Activate
+      let location = await Location.getCurrentPositionAsync({});
+      
+      setCustomAlert({ ...customAlert, visible: false }); 
+      
+      setNotifyTargetLocation({
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude
+      });
+      setIsNotifyActive(true);
+
+      // Force an immediate fetch to calculate initial distance
+      fetchTrackingData();
+
+    } catch (error) {
+      setCustomAlert({
+        visible: true,
+        title: "GPS Error",
+        message: "Could not find your location. Ensure GPS is enabled.",
+        type: "danger"
+      });
+    }
   };
 
   const selectedZone = useMemo(() => {
@@ -173,6 +455,16 @@ const TrackScreen = ({ navigation }) => {
           </TouchableOpacity>
         </View>
 
+        {/* OUT OF BOUNDS WARNING BANNER */}
+        {isOutsideNazareth && (
+          <View style={styles.outOfBoundsBanner}>
+            <AlertTriangle size={20} color="#D97706" style={{marginTop: 2}} />
+            <Text style={styles.outOfBoundsText}>
+              Your current location is outside Barangay Nazareth boundaries. Defaulting to overview mode.
+            </Text>
+          </View>
+        )}
+
         {!selectedZone ? (
           <View style={{ alignItems: 'center', marginTop: 50 }}>
             <Truck size={48} color="#94a3b8" opacity={0.5} />
@@ -259,11 +551,37 @@ const TrackScreen = ({ navigation }) => {
                     <Text style={styles.kpiLabel}>Pending</Text>
                 </View>
 
-                <View style={[styles.kpiBox, { backgroundColor: '#FEF2F2', borderColor: '#FECACA' }]}>
-                    <AlertCircle size={24} color="#DC2626" style={styles.kpiIcon} />
-                    <Text style={[styles.kpiValue, { color: '#DC2626' }]}>{missedCount}</Text>
-                    <Text style={styles.kpiLabel}>Missed</Text>
-                </View>
+                {isAllZones ? (
+                  <View style={[styles.kpiBox, { backgroundColor: '#FEF2F2', borderColor: '#FECACA' }]}>
+                      <AlertCircle size={24} color="#DC2626" style={styles.kpiIcon} />
+                      <Text style={[styles.kpiValue, { color: '#DC2626' }]}>{missedCount}</Text>
+                      <Text style={styles.kpiLabel}>Missed</Text>
+                  </View>
+                ) : (
+                  <TouchableOpacity 
+                    activeOpacity={0.8} 
+                    onPress={handleNotifyMe}
+                    style={[styles.kpiBox, { backgroundColor: isNotifyActive ? '#EEF2FF' : '#F1F5F9', borderColor: isNotifyActive ? '#93C5FD' : '#E2E8F0', padding: 0, overflow: 'hidden' }]}
+                  >
+                    <View style={{ flex: 1, width: '100%', alignItems: 'center', justifyContent: 'center', padding: 15 }}>
+                      {isNotifyActive ? (
+                        <>
+                          <BellRing size={24} color="#3B82F6" style={[styles.kpiIcon, { animation: 'pulse' }]} />
+                          <Text style={[styles.kpiValue, { color: '#3B82F6', fontSize: 16 }]}>
+                            {truckDistance !== null ? `${truckDistance}m` : 'Scanning'}
+                          </Text>
+                          <Text style={styles.kpiLabel}>Cancel Radar</Text>
+                        </>
+                      ) : (
+                        <>
+                          <Bell size={24} color="#64748B" style={styles.kpiIcon} />
+                          <Text style={[styles.kpiValue, { color: '#475569', fontSize: 14, marginTop: 4 }]}>Notify Me</Text>
+                          <Text style={styles.kpiLabel}>When Near</Text>
+                        </>
+                      )}
+                    </View>
+                  </TouchableOpacity>
+                )}
             </View>
 
             {/* COLLECTION ZONE / PROOF LIST*/}
@@ -451,10 +769,12 @@ const getStatusIcon = (status) => {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#E3F3DF' },
-  scrollContent: { padding: 20, paddingBottom: 100 }, // ✅ Increased to ensure bottom log items are visible above the FAB
+  scrollContent: { padding: 20, paddingBottom: 100 }, 
   headerSection: { marginTop: -15, marginBottom: 20 },
   screenTitle: { fontSize: 28, fontWeight: '800', color: '#1e293b' },
   subTitle: { fontSize: 14, color: '#64748b', marginTop: 4, marginBottom: 15 },
+  outOfBoundsBanner: { flexDirection: 'row', alignItems: 'flex-start', backgroundColor: '#FEF3C7', padding: 12, borderRadius: 12, marginBottom: 15, borderWidth: 1, borderColor: '#FDE68A' },
+  outOfBoundsText: { marginLeft: 10, fontSize: 13, color: '#B45309', fontWeight: '600', flex: 1, lineHeight: 18 },
   dropdownButton: { backgroundColor: '#F6FBF6', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, borderRadius: 16, borderWidth: 1, borderColor: '#e2e8f0', elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05 },
   dropdownText: { fontSize: 16, fontWeight: '600', color: '#1e293b', flex: 1 },
   card: { backgroundColor: '#F6FBF6', borderRadius: 20, padding: 20, marginBottom: 20, borderWidth: 1, borderColor: '#f1f5f9', elevation: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05 },
@@ -493,29 +813,7 @@ const styles = StyleSheet.create({
   collectorText: { fontSize: 11, color: '#94a3b8', marginTop: 4, marginLeft: 0 },
   viewPhotoButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#eff6ff', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
   viewPhotoText: { fontSize: 11, color: '#3B82F6', fontWeight: '600', marginLeft: 6 },
-  
-  // --- ✅ ALIGNED FAB STYLES ---
-  quickReportFab: { 
-    position: 'absolute', 
-    right: 20, 
-    bottom: Platform.OS === 'ios' ? 30 : 20, // Places it cleanly above the bottom tabs
-    width: 60, 
-    height: 60, 
-    borderRadius: 30, 
-    backgroundColor: '#1B5E20', // Matches your exact App theme color from AppNavigator
-    justifyContent: 'center', 
-    alignItems: 'center', 
-    elevation: 8, 
-    shadowColor: '#1B5E20', 
-    shadowOffset: { width: 0, height: 4 }, 
-    shadowOpacity: 0.4, 
-    shadowRadius: 6, 
-    zIndex: 100,
-    borderWidth: 2,
-    borderColor: '#E3F3DF' // Blends with the screen background
-  },
-
-  // Modals
+  quickReportFab: { position: 'absolute', right: 20, bottom: Platform.OS === 'ios' ? 30 : 20, width: 60, height: 60, borderRadius: 30, backgroundColor: '#1B5E20', justifyContent: 'center', alignItems: 'center', elevation: 8, shadowColor: '#1B5E20', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 6, zIndex: 100, borderWidth: 2, borderColor: '#E3F3DF' },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   modalContent: { backgroundColor: 'white', borderTopLeftRadius: 25, borderTopRightRadius: 25, padding: 25, paddingBottom: 40 },
   modalTitle: { fontSize: 20, fontWeight: '700', marginBottom: 15, color: '#1e293b', textAlign: 'center' },
@@ -523,27 +821,9 @@ const styles = StyleSheet.create({
   modalItemSelected: { backgroundColor: '#f8fafc' },
   modalItemText: { fontSize: 16, color: '#475569', flex: 1 },
   modalItemTextSelected: { color: '#3B82F6', fontWeight: '700' },
-
-  // Photo Modal Styles
-  photoModalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.95)',
-    justifyContent: 'center',
-    alignItems: 'center'
-  },
-  closePhotoBtn: {
-    position: 'absolute',
-    top: Platform.OS === 'ios' ? 60 : 40,
-    right: 20,
-    zIndex: 10,
-    padding: 10,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    borderRadius: 25
-  },
-  fullScreenPhoto: {
-    width: width,
-    height: '80%'
-  }
+  photoModalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.95)', justifyContent: 'center', alignItems: 'center' },
+  closePhotoBtn: { position: 'absolute', top: Platform.OS === 'ios' ? 60 : 40, right: 20, zIndex: 10, padding: 10, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 25 },
+  fullScreenPhoto: { width: width, height: '80%' }
 });
 
 export default TrackScreen;
