@@ -32,6 +32,124 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { mobileService } from '../services/mobileService';
 
+// ✅ Extracted ReportCard outside to prevent state resets and improve performance
+const ReportCard = ({ item, onAttentionPress, onNavigate }) => {
+  // Add state to track image loading
+  const [isImageLoading, setIsImageLoading] = useState(true);
+
+  const fullName = item.reporter_name || "Citizen";
+  const displayIssue = item.issue_type === 'Other' ? item.issue_type_other : item.issue_type;
+  const reportDate = new Date(item.created_at);
+  const formattedDate = reportDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const formattedTime = reportDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+
+  const isAttended =
+    item.has_attended === true ||
+    item.has_attended === 'true' ||
+    item.has_attended === 1 ||
+    item.has_attended === 't';
+
+  const statusStyles = {
+    'Pending': { color: '#EF4444', bg: '#FEE2E2', icon: AlertTriangle },
+    'In Progress': { color: '#F59E0B', bg: '#FEF3C7', icon: Clock },
+    'Resolved': { color: '#10B981', bg: '#D1FAE5', icon: CheckCircle2 }
+  };
+  const currentStatus = statusStyles[item.status] || statusStyles['Pending'];
+
+  return (
+    <View style={styles.reportCard}>
+      <View style={styles.cardHeader}>
+        <View style={styles.userInfo}>
+          <View style={styles.avatarCircle}>
+            {item.profile_picture ? (
+              <Image
+                source={{ uri: mobileService.getImageUrl(item.profile_picture) }}
+                style={styles.avatarImage}
+              />
+            ) : (
+              <User size={18} color="#94a3b8" />
+            )}
+          </View>
+          <Text style={styles.citizenNameText}>{fullName}</Text>
+        </View>
+        <View style={styles.timeInfo}>
+          <Clock size={12} color="#94a3b8" />
+          <Text style={styles.dateText}>{`${formattedDate} • ${formattedTime}`}</Text>
+        </View>
+      </View>
+
+      {/* ✅ Image Wrapper with Loading Overlay */}
+      <View style={styles.imageWrapper}>
+        <Image
+          source={{ uri: mobileService.getImageUrl(item.photo_evidence_url) || 'https://via.placeholder.com/400x250' }}
+          style={styles.reportImage}
+          resizeMode="cover"
+          onLoadStart={() => setIsImageLoading(true)}
+          onLoadEnd={() => setIsImageLoading(false)}
+        />
+        {isImageLoading && (
+          <View style={styles.loaderOverlay}>
+            <ActivityIndicator size="large" color="#1B5E20" />
+            <Text style={styles.loadingText}>Loading image...</Text>
+          </View>
+        )}
+      </View>
+
+      <View style={styles.cardContent}>
+        <View style={styles.issueRow}>
+          <Text style={styles.issueTypeText}>{displayIssue}</Text>
+          <View style={[styles.statusBadgeSmall, { backgroundColor: currentStatus.bg }]}>
+            <currentStatus.icon size={12} color={currentStatus.color} />
+            <Text style={[styles.statusTextSmall, { color: currentStatus.color }]}>{item.status}</Text>
+          </View>
+        </View>
+
+        <View style={styles.locationRow}>
+          <MapPin size={14} color="#64748b" />
+          <Text style={styles.locationText} numberOfLines={1}>{item.location_address}</Text>
+        </View>
+
+        {item.description ? (
+          <View style={styles.descriptionBox}>
+            <Text style={styles.descriptionLabel}>Description:</Text>
+            <Text style={styles.descriptionText}>{item.description}</Text>
+          </View>
+        ) : null}
+      </View>
+
+      <View style={styles.cardActionsRow}>
+        <TouchableOpacity
+          activeOpacity={0.7}
+          style={[
+            styles.attentionBtn,
+            isAttended && styles.attentionBtnActive
+          ]}
+          onPress={() => onAttentionPress(item.report_id)}
+        >
+          <AlertTriangle
+            size={18}
+            color={isAttended ? "#FFFFFF" : "#EF4444"}
+          />
+          <Text style={[
+            styles.attentionText,
+            isAttended && styles.attentionTextActive
+          ]}>
+            {isAttended ? 'Attended' : 'Need Attention'} {item.attention_count > 0 ? `(${item.attention_count})` : ''}
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity 
+          style={styles.navigateBtnSmall}
+          onPress={() => onNavigate(item)}
+        >
+          <Navigation size={18} color="#fff" />
+          <Text style={styles.navigateTextSmall}>Navigate</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+};
+
 const FeedScreen = () => {
   const insets = useSafeAreaInsets();
   const listRef = useRef(null);
@@ -74,7 +192,6 @@ const FeedScreen = () => {
     }, [])
   );
 
-  // ✅ FIXED: Now we pass the entire 'item' object so the Map knows its status!
   const handleNavigate = (item) => {
     if (!item.latitude || !item.longitude) {
       Alert.alert("Error", "Location coordinates not available.");
@@ -87,12 +204,12 @@ const FeedScreen = () => {
         longitude: parseFloat(item.longitude),
       },
       reportId: item.report_id,
-      targetReport: item // 👈 THIS IS THE CRITICAL LINE THAT TELLS THE MAP IT IS RESOLVED
+      targetReport: item
     });
   };
 
   const handleAttentionPress = async (reportId) => {
-    // 1. Optimistic UI Change (Instant color change)
+    // 1. Optimistic UI Change
     setReports((prevReports) =>
       prevReports.map((report) => {
         if (report.report_id === reportId) {
@@ -133,110 +250,6 @@ const FeedScreen = () => {
     .filter(report => report.status === activeFilter)
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
-  const ReportCard = ({ item }) => {
-    const fullName = item.reporter_name || "Citizen";
-    const displayIssue = item.issue_type === 'Other' ? item.issue_type_other : item.issue_type;
-    const reportDate = new Date(item.created_at);
-    const formattedDate = reportDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-    const formattedTime = reportDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-
-    const isAttended =
-      item.has_attended === true ||
-      item.has_attended === 'true' ||
-      item.has_attended === 1 ||
-      item.has_attended === 't';
-
-    const statusStyles = {
-      'Pending': { color: '#EF4444', bg: '#FEE2E2', icon: AlertTriangle },
-      'In Progress': { color: '#F59E0B', bg: '#FEF3C7', icon: Clock },
-      'Resolved': { color: '#10B981', bg: '#D1FAE5', icon: CheckCircle2 }
-    };
-    const currentStatus = statusStyles[item.status] || statusStyles['Pending'];
-
-    return (
-      <View style={styles.reportCard}>
-        <View style={styles.cardHeader}>
-          <View style={styles.userInfo}>
-            <View style={styles.avatarCircle}>
-              {item.profile_picture ? (
-                <Image
-                  source={{ uri: mobileService.getImageUrl(item.profile_picture) }}
-                  style={styles.avatarImage}
-                />
-              ) : (
-                <User size={18} color="#94a3b8" />
-              )}
-            </View>
-            <Text style={styles.citizenNameText}>{fullName}</Text>
-          </View>
-          <View style={styles.timeInfo}>
-            <Clock size={12} color="#94a3b8" />
-            <Text style={styles.dateText}>{`${formattedDate} • ${formattedTime}`}</Text>
-          </View>
-        </View>
-
-        <Image
-          source={{ uri: mobileService.getImageUrl(item.photo_evidence_url) || 'https://via.placeholder.com/400x250' }}
-          style={styles.reportImage}
-          resizeMode="cover"
-        />
-
-        <View style={styles.cardContent}>
-          <View style={styles.issueRow}>
-            <Text style={styles.issueTypeText}>{displayIssue}</Text>
-            <View style={[styles.statusBadgeSmall, { backgroundColor: currentStatus.bg }]}>
-              <currentStatus.icon size={12} color={currentStatus.color} />
-              <Text style={[styles.statusTextSmall, { color: currentStatus.color }]}>{item.status}</Text>
-            </View>
-          </View>
-
-          <View style={styles.locationRow}>
-            <MapPin size={14} color="#64748b" />
-            <Text style={styles.locationText} numberOfLines={1}>{item.location_address}</Text>
-          </View>
-
-          {item.description ? (
-            <View style={styles.descriptionBox}>
-              <Text style={styles.descriptionLabel}>Description:</Text>
-              <Text style={styles.descriptionText}>{item.description}</Text>
-            </View>
-          ) : null}
-        </View>
-
-        <View style={styles.cardActionsRow}>
-          <TouchableOpacity
-            activeOpacity={0.7}
-            style={[
-              styles.attentionBtn,
-              isAttended && styles.attentionBtnActive
-            ]}
-            onPress={() => handleAttentionPress(item.report_id)}
-          >
-            <AlertTriangle
-              size={18}
-              color={isAttended ? "#FFFFFF" : "#EF4444"}
-            />
-            <Text style={[
-              styles.attentionText,
-              isAttended && styles.attentionTextActive
-            ]}>
-              {isAttended ? 'Attended' : 'Need Attention'} {item.attention_count > 0 ? `(${item.attention_count})` : ''}
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={styles.navigateBtnSmall}
-            // ✅ FIXED: Pass the full 'item' directly to the function
-            onPress={() => handleNavigate(item)}
-          >
-            <Navigation size={18} color="#fff" />
-            <Text style={styles.navigateTextSmall}>Navigate</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  };
-
   return (
     <View style={styles.container}>
       <View style={[styles.headerSection, { paddingTop: Platform.OS === 'ios' ? insets.top : 15 }]}>
@@ -263,7 +276,14 @@ const FeedScreen = () => {
           ref={listRef}
           data={filteredReports}
           keyExtractor={(item) => item.report_id.toString()}
-          renderItem={({ item }) => <ReportCard item={item} />}
+          // ✅ Passing the necessary functions as props to our extracted component
+          renderItem={({ item }) => (
+            <ReportCard 
+              item={item} 
+              onAttentionPress={handleAttentionPress}
+              onNavigate={handleNavigate}
+            />
+          )}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
           contentContainerStyle={[styles.listContainer, { paddingBottom: insets.bottom + 20 }]}
           showsVerticalScrollIndicator={false}
@@ -292,7 +312,13 @@ const styles = StyleSheet.create({
   citizenNameText: { fontSize: 14, fontWeight: '800', color: '#1E293B' },
   timeInfo: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   dateText: { fontSize: 11, color: '#94a3b8', fontWeight: '600' },
-  reportImage: { width: '100%', height: 230, backgroundColor: '#F1F5F9' },
+  
+  // ✅ New Styles for Image Loading
+  imageWrapper: { width: '100%', height: 230, backgroundColor: '#F1F5F9', position: 'relative' },
+  reportImage: { width: '100%', height: '100%' },
+  loaderOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center' },
+  loadingText: { marginTop: 8, fontSize: 12, color: '#64748b', fontWeight: '600' },
+  
   cardContent: { padding: 15 },
   issueRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
   issueTypeText: { fontSize: 18, fontWeight: '900', color: '#0F172A', flex: 1 },
