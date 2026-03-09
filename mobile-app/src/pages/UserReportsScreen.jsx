@@ -86,7 +86,7 @@ const UserReportsScreen = ({ navigation }) => {
     }
   };
 
-  // ✅ ADDED: Need Attention Toggle Logic
+  // Need Attention Toggle Logic
   const handleAttentionPress = async (reportId) => {
     setReports((prevReports) =>
       prevReports.map((report) => {
@@ -117,7 +117,7 @@ const UserReportsScreen = ({ navigation }) => {
     }
   };
 
-  // ✅ ADDED: Navigate Logic
+  // Navigate Logic
   const handleNavigate = (item) => {
     if (!item.latitude || !item.longitude) {
       Alert.alert("Error", "Location coordinates not available.");
@@ -139,6 +139,19 @@ const UserReportsScreen = ({ navigation }) => {
       return report.status === activeFilter;
     })
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+  // ✅ ADDED: formatFullDate function to fix the black screen crash
+  const formatFullDate = (dateString) => {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', { 
+      month: 'short', 
+      day: 'numeric', 
+      year: 'numeric', 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    });
+  };
 
   const ReportCard = ({ item, onImagePress }) => {
     const fullName = item.reporter_name || "Citizen";
@@ -198,7 +211,7 @@ const UserReportsScreen = ({ navigation }) => {
 
     return (
       <View style={styles.reportCard}>
-        {/* ✅ UPDATED: User Profile Header */}
+        {/* User Profile Header */}
         <View style={styles.cardHeader}>
           <View style={styles.userInfo}>
             <View style={styles.avatarCircle}>
@@ -242,7 +255,7 @@ const UserReportsScreen = ({ navigation }) => {
           </View>
         ) : null}
 
-        {/* ✅ UPDATED: Full Width Image */}
+        {/* Full Width Image */}
         <TouchableOpacity 
           activeOpacity={0.8} 
           onPress={() => onImagePress(mobileService.getImageUrl(item.photo_evidence_url || item.photo_url) || 'https://via.placeholder.com/400x250')}
@@ -255,7 +268,7 @@ const UserReportsScreen = ({ navigation }) => {
         </TouchableOpacity>
 
         <View style={styles.cardContent}>
-          {/* ✅ UPDATED: Issue Type & Status below the image */}
+          {/* Issue Type & Status below the image */}
           <View style={styles.issueRow}>
             <Text style={styles.issueTypeText}>{displayIssue}</Text>
             <View style={[styles.statusBadgeSmall, { backgroundColor: currentStatus.bg }]}>
@@ -339,7 +352,7 @@ const UserReportsScreen = ({ navigation }) => {
           ) : null}
         </View>
 
-        {/* ✅ ADDED: Card Actions Row (Need Attention & Navigate) */}
+        {/* Card Actions Row (Need Attention & Navigate) */}
         <View style={styles.cardActionsRow}>
           <TouchableOpacity
             activeOpacity={0.7}
@@ -455,7 +468,6 @@ const styles = StyleSheet.create({
   activeTabText: { color: '#fff' },
   listContainer: { padding: 15 },
   
-  // ✅ UPDATED REPORT CARD STYLES
   reportCard: { backgroundColor: '#F6FBF6', borderRadius: 25, marginBottom: 20, elevation: 3, overflow: 'hidden' },
   
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 15, borderBottomWidth: 1, borderBottomColor: '#F1F5F9', zIndex: 2 },
@@ -476,7 +488,7 @@ const styles = StyleSheet.create({
   
   dropdownMenu: {
     position: 'absolute',
-    top: 55, // Adjusted to sit nicely below the header dots
+    top: 55, 
     right: 15,
     backgroundColor: '#fff',
     borderRadius: 12,
@@ -504,7 +516,6 @@ const styles = StyleSheet.create({
   descriptionLabel: { fontSize: 11, fontWeight: '800', color: '#475569', marginBottom: 2, textTransform: 'uppercase' },
   descriptionText: { fontSize: 14, color: '#334155', lineHeight: 20 },
   
-  // ✅ NEW BUTTON STYLES
   cardActionsRow: { flexDirection: 'row', padding: 15, paddingTop: 0, gap: 10 },
   attentionBtn: { flex: 1.3, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, height: 48, borderRadius: 14, borderWidth: 1.5, borderColor: '#FEE2E2', backgroundColor: '#FFF' },
   attentionBtnActive: { backgroundColor: '#EF4444', borderColor: '#EF4444' },
