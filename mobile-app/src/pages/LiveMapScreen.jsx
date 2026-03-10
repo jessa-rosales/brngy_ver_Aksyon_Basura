@@ -1,14 +1,33 @@
 import React, { useMemo, useRef, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Dimensions, Platform, StatusBar, Alert, Image } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Dimensions, Platform, StatusBar, Alert, Image, ActivityIndicator } from 'react-native';
 import MapboxGL from '@rnmapbox/maps';
-import { Truck, Bell, ChevronLeft, MapPin, Navigation, CheckCircle2, Trash2, AlertTriangle, Map as MapIcon, Clock } from 'lucide-react-native';
+import { Truck, Bell, ChevronLeft, MapPin, Navigation, CheckCircle2, Trash2, AlertTriangle, Map as MapIcon, Clock, BellRing } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Location from 'expo-location';
+import * as Notifications from 'expo-notifications';
 import { mobileService } from '../services/mobileService'; 
+
+// ✅ IMPORT THE NEW RADAR CONTEXT
+import { useRadar } from '../context/RadarContext';
 
 MapboxGL.setAccessToken('pk.eyJ1IjoiamVnby1ybyIsImEiOiJjbWx6dnZ6YmQwOW12NGtxd25vMmJldGZhIn0.uCCN-70t1ZZugt6h1ZoMOg');
 
 const { width, height } = Dimensions.get('window');
+
+// --- 🔥 MATH HELPER: Haversine Distance (Meters) ---
+const getDistanceInMeters = (lat1, lon1, lat2, lon2) => {
+  if (!lat1 || !lon1 || !lat2 || !lon2) return Infinity;
+  const R = 6371e3; 
+  const rad = Math.PI / 180;
+  const dLat = (lat2 - lat1) * rad;
+  const dLon = (lon2 - lon1) * rad;
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1 * rad) * Math.cos(lat2 * rad) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+};
 
 /* ==========================================
    NAZARETH BOUNDARY CONFIGURATION
@@ -166,6 +185,17 @@ const LiveMapScreen = ({ navigation, route }) => {
       : null
   );
 
+  // ✅ USE GLOBAL RADAR CONTEXT INSTEAD OF LOCAL STATE
+  const { 
+    isNotifyActive, 
+    isNotifyLoading, 
+    notifyTargetLocation, 
+    truckDistance, 
+    setTruckDistance, 
+    toggleRadar, 
+    triggerArrivalReset 
+  } = useRadar();
+
   // ✅ DYNAMICALLY FETCH AND MATCH ZONE IF COMING FROM FEED
   useEffect(() => {
     const fetchZones = async () => {
@@ -190,38 +220,71 @@ const LiveMapScreen = ({ navigation, route }) => {
     fetchZones();
   }, [targetLocation]);
 
+  // ✅ POLLING FOR LOCATION AND DISTANCE
   useEffect(() => {
     if (isAllZones || !activeZone.zone_id) return;
+    
     const fetchLiveLocation = async () => {
       try {
         const result = await mobileService.getZoneTrackingData();
         if (result && result.success) {
           const currentZoneInfo = result.data.find(z => z.zone_id === activeZone.zone_id);
+          
           if (currentZoneInfo && currentZoneInfo.truck_lat && currentZoneInfo.truck_lng) {
-            setLiveTruckCoords([Number(currentZoneInfo.truck_lng), Number(currentZoneInfo.truck_lat)]);
+            const newLng = Number(currentZoneInfo.truck_lng);
+            const newLat = Number(currentZoneInfo.truck_lat);
+            
+            setLiveTruckCoords([newLng, newLat]);
+
+            // Handle active radar distance calculation
+            if (isNotifyActive && notifyTargetLocation) {
+              const distance = getDistanceInMeters(
+                notifyTargetLocation.latitude,
+                notifyTargetLocation.longitude,
+                newLat,
+                newLng
+              );
+              
+              setTruckDistance(Math.round(distance));
+
+              if (distance <= 20) {
+                // Truck is close! Trigger alerts and disable radar globally.
+                triggerArrivalReset();
+                
+                Alert.alert("Truck Arriving!", "The garbage truck is within 20 meters of your location.");
+                
+                await Notifications.scheduleNotificationAsync({
+                  content: {
+                    title: "🚛 Garbage Truck is Here!",
+                    body: "The collection truck has arrived within 20 meters of your location.",
+                    sound: true,
+                    priority: Notifications.AndroidNotificationPriority.HIGH,
+                  },
+                  trigger: null,
+                });
+              }
+            }
           }
         }
       } catch (error) {
         console.log("Map Polling Error:", error);
       }
     };
+    
     const interval = setInterval(fetchLiveLocation, 5000); 
     return () => clearInterval(interval);
-  }, [isAllZones, activeZone.zone_id]);
+  }, [isAllZones, activeZone.zone_id, isNotifyActive, notifyTargetLocation]);
   
   useEffect(() => {
     if (!cameraRef.current) return;
     const timer = setTimeout(() => {
       if (targetLocation) {
-        // Zoom level 16.5 is perfect to see the specific report AND the bounding box of the zone
         cameraRef.current.setCamera({
           centerCoordinate: [Number(targetLocation.longitude), Number(targetLocation.latitude)],
           zoomLevel: 16.5, 
           animationDuration: 1500, 
           pitch: 0, 
         });
-      } else if (!isAllZones && activeZone && activeZone.boundaries) {
-        // ... (Existing bounding box logic for Driver/Collector views)
       } else {
         cameraRef.current.setCamera({
           centerCoordinate: [124.6469, 8.4703],
@@ -234,7 +297,6 @@ const LiveMapScreen = ({ navigation, route }) => {
     return () => clearTimeout(timer);
   }, [targetLocation, isAllZones, activeZone]);
 
-  // ✅ ONLY DRAW THE MATCHED ZONE (OR ALL IF NOT NAVIGATING TO ONE)
   const mapFeatures = useMemo(() => {
     const features = [];
 
@@ -491,12 +553,31 @@ const LiveMapScreen = ({ navigation, route }) => {
               <Text style={styles.statLabel}>Stops Left</Text>
             </View>
             
-            <TouchableOpacity activeOpacity={0.9}>
-                <LinearGradient colors={['#3B82F6', '#2563EB']} style={styles.notifyButton}>
-                    <Bell color="white" size={18} />
-                    <Text style={styles.notifyText}>Notify Me</Text>
-                </LinearGradient>
-            </TouchableOpacity>
+            {/* ✅ UPDATED NOTIFY BUTTON CALLING GLOBAL CONTEXT */}
+            {!isAllZones && (
+              <TouchableOpacity 
+                activeOpacity={0.8} 
+                onPress={() => toggleRadar()}
+                disabled={isNotifyLoading}
+              >
+                  <LinearGradient 
+                    colors={isNotifyActive ? ['#EEF2FF', '#E0E7FF'] : ['#3B82F6', '#2563EB']} 
+                    style={[styles.notifyButton, isNotifyActive && { borderWidth: 1, borderColor: '#93C5FD' }]}
+                  >
+                      {isNotifyLoading ? (
+                        <ActivityIndicator size="small" color="#fff" style={{ marginRight: 6 }} />
+                      ) : isNotifyActive ? (
+                        <BellRing color="#3B82F6" size={18} />
+                      ) : (
+                        <Bell color="white" size={18} />
+                      )}
+                      
+                      <Text style={[styles.notifyText, isNotifyActive && { color: '#3B82F6' }]}>
+                        {isNotifyLoading ? 'Scanning...' : (isNotifyActive ? (truckDistance !== null ? `${truckDistance}m Away` : 'Scanning...') : 'Notify Me')}
+                      </Text>
+                  </LinearGradient>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
       </View>
