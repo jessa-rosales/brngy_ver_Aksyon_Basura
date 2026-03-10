@@ -60,7 +60,7 @@ import dprofile from '../assets/D-profile.jpg';
 // ==========================================
 // APP DOWNLOAD LINK
 // ==========================================
-const EXPO_DOWNLOAD_LINK = "https://expo.dev/accounts/jejerogo/projects/aksyon-basura/builds/016b6294-7a92-442e-b53a-aa88f2171523";
+const EXPO_DOWNLOAD_LINK = "https://expo.dev/accounts/jejerogo/projects/aksyon-basura/builds/8773b44d-640b-46a1-be81-dd8f8db2ba45";
 
 
 /* ==========================================
