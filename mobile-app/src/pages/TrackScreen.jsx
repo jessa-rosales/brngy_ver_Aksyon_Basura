@@ -4,16 +4,20 @@ import { ChevronDown, MapPin, Truck, Clock, CheckCircle2, AlertCircle, Camera, N
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Location from 'expo-location'; 
-import * as Notifications from 'expo-notifications'; // ✅ ADDED FOR PUSH NOTIFICATIONS
+import * as Notifications from 'expo-notifications'; 
 import { mobileService } from '../services/mobileService'; 
 import CustomAlert from '../components/CustomAlert';
+
+// ✅ IMPORT THE NEW RADAR CONTEXT
+import { useRadar } from '../context/RadarContext';
 
 const { width } = Dimensions.get('window');
 
 // ✅ CONFIGURE NOTIFICATIONS (Tells the app to show banners and play sounds)
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true,
+    shouldShowBanner: true, // ✅ Replaces shouldShowAlert (shows the drop-down banner)
+    shouldShowList: true,   // ✅ Replaces shouldShowAlert (keeps it in the notification center)
     shouldPlaySound: true,
     shouldSetBadge: false,
   }),
@@ -143,10 +147,16 @@ const TrackScreen = ({ navigation }) => {
   const [evidencePhoto, setEvidencePhoto] = useState(null);
   const [customAlert, setCustomAlert] = useState({ visible: false, title: '', message: '', type: 'info' });
 
-  // PROXIMITY NOTIFICATION STATES
-  const [isNotifyActive, setIsNotifyActive] = useState(false);
-  const [notifyTargetLocation, setNotifyTargetLocation] = useState(null);
-  const [truckDistance, setTruckDistance] = useState(null);
+  // ✅ USE GLOBAL RADAR CONTEXT INSTEAD OF LOCAL STATE
+  const { 
+    isNotifyActive, 
+    isNotifyLoading, 
+    notifyTargetLocation, 
+    truckDistance, 
+    setTruckDistance, 
+    toggleRadar, 
+    triggerArrivalReset 
+  } = useRadar();
 
   const isToday = (dateString) => {
     if (!dateString) return false;
@@ -223,7 +233,7 @@ const TrackScreen = ({ navigation }) => {
           autoDetectUserZone(processedData);
         }
 
-        // ✅ HANDLE PROXIMITY NOTIFICATION LOGIC
+        // ✅ HANDLE GLOBAL PROXIMITY NOTIFICATION LOGIC
         if (isNotifyActive && notifyTargetLocation && selectedIdentifier.zone_id !== 'all') {
           const currentZoneData = processedData.find(z => z.zone_id === selectedIdentifier.zone_id);
           
@@ -237,11 +247,9 @@ const TrackScreen = ({ navigation }) => {
             
             setTruckDistance(Math.round(distance));
 
-            // ✅ If truck is closer than 20 meters, trigger BOTH alerts
+            // ✅ If truck is closer than 20 meters, trigger BOTH alerts and reset global state
             if (distance <= 20) {
-              setIsNotifyActive(false);
-              setNotifyTargetLocation(null);
-              setTruckDistance(null);
+              triggerArrivalReset(); // Global Reset
               
               // 1. Trigger Local In-App Alert
               setCustomAlert({
@@ -291,80 +299,7 @@ const TrackScreen = ({ navigation }) => {
     if (isOutsideNazareth) setIsOutsideNazareth(false);
     
     if (isNotifyActive) {
-      setIsNotifyActive(false);
-      setNotifyTargetLocation(null);
-      setTruckDistance(null);
-    }
-  };
-
-  // ✅ ENHANCED: Request Notification & Location Permissions
-  const handleNotifyMe = async () => {
-    if (isNotifyActive) {
-      // Toggle off
-      setIsNotifyActive(false);
-      setNotifyTargetLocation(null);
-      setTruckDistance(null);
-      return;
-    }
-
-    try {
-      // 1. Check Location Permissions
-      let { status: locationStatus } = await Location.requestForegroundPermissionsAsync();
-      if (locationStatus !== 'granted') {
-        setCustomAlert({
-          visible: true,
-          title: "Location Needed",
-          message: "We need your location to tell you when the truck is nearby.",
-          type: "warning"
-        });
-        return;
-      }
-
-      // 2. Check Push Notification Permissions
-      const { status: existingNotifStatus } = await Notifications.getPermissionsAsync();
-      let finalNotifStatus = existingNotifStatus;
-      if (existingNotifStatus !== 'granted') {
-        const { status } = await Notifications.requestPermissionsAsync();
-        finalNotifStatus = status;
-      }
-      
-      if (finalNotifStatus !== 'granted') {
-        setCustomAlert({
-          visible: true,
-          title: "Notifications Disabled",
-          message: "You won't receive system pop-ups, but the in-app alert will still work.",
-          type: "warning"
-        });
-      }
-
-      setCustomAlert({
-        visible: true,
-        title: "Activating Radar",
-        message: "Fetching your exact location...",
-        type: "info"
-      });
-
-      // 3. Get Location and Activate
-      let location = await Location.getCurrentPositionAsync({});
-      
-      setCustomAlert({ ...customAlert, visible: false }); 
-      
-      setNotifyTargetLocation({
-        latitude: location.coords.latitude,
-        longitude: location.coords.longitude
-      });
-      setIsNotifyActive(true);
-
-      // Force an immediate fetch to calculate initial distance
-      fetchTrackingData();
-
-    } catch (error) {
-      setCustomAlert({
-        visible: true,
-        title: "GPS Error",
-        message: "Could not find your location. Ensure GPS is enabled.",
-        type: "danger"
-      });
+      triggerArrivalReset(); // Turn off radar globally if they switch zones
     }
   };
 
@@ -522,22 +457,59 @@ const TrackScreen = ({ navigation }) => {
                     </>
                 )}
 
-                {/* TRACK ON MAP BUTTON */}
-                <TouchableOpacity 
-                    style={styles.trackMapButton} 
-                    onPress={() => navigation.navigate('LiveMapScreen', { 
-                        zoneData: selectedZone,
-                        allZonesData: isAllZones ? zonesData : [selectedZone]
-                    })} 
-                >
-                    <LinearGradient colors={['#3B82F6', '#2563EB']} style={styles.gradientButton}>
-                        {isAllZones ? <MapIcon size={18} color="white" /> : <Navigation size={18} color="white" />}
-                        <Text style={styles.trackButtonText}>{isAllZones ? 'Open Map' : 'Track on Map'}</Text>
-                    </LinearGradient>
-                </TouchableOpacity>
+                {/* TRACK ON MAP & NOTIFY BUTTONS */}
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                    {/* MAP BUTTON */}
+                    <TouchableOpacity 
+                        style={[styles.trackMapButton, { flex: 1 }]} 
+                        onPress={() => navigation.navigate('LiveMapScreen', { 
+                            zoneData: selectedZone,
+                            allZonesData: isAllZones ? zonesData : [selectedZone]
+                        })} 
+                    >
+                        <LinearGradient colors={['#3B82F6', '#2563EB']} style={styles.gradientButton}>
+                            {isAllZones ? <MapIcon size={18} color="white" /> : <Navigation size={18} color="white" />}
+                            <Text style={styles.trackButtonText}>{isAllZones ? 'Open Map' : 'Track'}</Text>
+                        </LinearGradient>
+                    </TouchableOpacity>
+
+                    {/* ✅ NOTIFY ME BUTTON LINKED TO GLOBAL CONTEXT */}
+                    {!isAllZones && (
+                        <TouchableOpacity 
+                            style={[
+                                styles.trackMapButton, 
+                                { flex: 1, backgroundColor: isNotifyActive ? '#EEF2FF' : '#F8FAFC', borderWidth: 1, borderColor: isNotifyActive ? '#93C5FD' : '#E2E8F0', marginLeft: Platform.OS === 'android' ? 10 : 0 }
+                            ]} 
+                            activeOpacity={0.8}
+                            onPress={() => toggleRadar(setCustomAlert)}
+                            disabled={isNotifyLoading}
+                        >
+                            <View style={[styles.gradientButton, { backgroundColor: 'transparent' }]}>
+                                {isNotifyLoading ? (
+                                    <>
+                                        <ActivityIndicator size="small" color="#3B82F6" />
+                                        <Text style={[styles.trackButtonText, { color: '#3B82F6', marginLeft: 6 }]}>Wait...</Text>
+                                    </>
+                                ) : isNotifyActive ? (
+                                    <>
+                                        <BellRing size={18} color="#3B82F6" />
+                                        <Text style={[styles.trackButtonText, { color: '#3B82F6', marginLeft: 6 }]}>
+                                            {truckDistance !== null ? `${truckDistance}m` : 'Scanning...'}
+                                        </Text>
+                                    </>
+                                ) : (
+                                    <>
+                                        <Bell size={18} color="#64748B" />
+                                        <Text style={[styles.trackButtonText, { color: '#475569', marginLeft: 6 }]}>Notify Me</Text>
+                                    </>
+                                )}
+                            </View>
+                        </TouchableOpacity>
+                    )}
+                </View>
             </View>
 
-            {/* KPI SECTION */}
+            {/* KPI SECTION (RESTORED MISSED CARD) */}
             <View style={styles.kpiContainer}>
                 <View style={[styles.kpiBox, { backgroundColor: '#ECFDF5', borderColor: '#A7F3D0' }]}>
                     <Trash2 size={24} color="#059669" style={styles.kpiIcon} />
@@ -551,37 +523,12 @@ const TrackScreen = ({ navigation }) => {
                     <Text style={styles.kpiLabel}>Pending</Text>
                 </View>
 
-                {isAllZones ? (
-                  <View style={[styles.kpiBox, { backgroundColor: '#FEF2F2', borderColor: '#FECACA' }]}>
-                      <AlertCircle size={24} color="#DC2626" style={styles.kpiIcon} />
-                      <Text style={[styles.kpiValue, { color: '#DC2626' }]}>{missedCount}</Text>
-                      <Text style={styles.kpiLabel}>Missed</Text>
-                  </View>
-                ) : (
-                  <TouchableOpacity 
-                    activeOpacity={0.8} 
-                    onPress={handleNotifyMe}
-                    style={[styles.kpiBox, { backgroundColor: isNotifyActive ? '#EEF2FF' : '#F1F5F9', borderColor: isNotifyActive ? '#93C5FD' : '#E2E8F0', padding: 0, overflow: 'hidden' }]}
-                  >
-                    <View style={{ flex: 1, width: '100%', alignItems: 'center', justifyContent: 'center', padding: 15 }}>
-                      {isNotifyActive ? (
-                        <>
-                          <BellRing size={24} color="#3B82F6" style={[styles.kpiIcon, { animation: 'pulse' }]} />
-                          <Text style={[styles.kpiValue, { color: '#3B82F6', fontSize: 16 }]}>
-                            {truckDistance !== null ? `${truckDistance}m` : 'Scanning'}
-                          </Text>
-                          <Text style={styles.kpiLabel}>Cancel Radar</Text>
-                        </>
-                      ) : (
-                        <>
-                          <Bell size={24} color="#64748B" style={styles.kpiIcon} />
-                          <Text style={[styles.kpiValue, { color: '#475569', fontSize: 14, marginTop: 4 }]}>Notify Me</Text>
-                          <Text style={styles.kpiLabel}>When Near</Text>
-                        </>
-                      )}
-                    </View>
-                  </TouchableOpacity>
-                )}
+                {/* MISSED CARD IS NOW ALWAYS VISIBLE */}
+                <View style={[styles.kpiBox, { backgroundColor: '#FEF2F2', borderColor: '#FECACA' }]}>
+                    <AlertCircle size={24} color="#DC2626" style={styles.kpiIcon} />
+                    <Text style={[styles.kpiValue, { color: '#DC2626' }]}>{missedCount}</Text>
+                    <Text style={styles.kpiLabel}>Missed</Text>
+                </View>
             </View>
 
             {/* COLLECTION ZONE / PROOF LIST*/}
