@@ -40,7 +40,7 @@ const AnnouncementDetailsModal = ({ isOpen, onClose, announcement, onArchive, on
           {announcement.ann_photo ? (
             <div className="animate-in fade-in zoom-in-110 duration-1000">
               <img 
-                src={`http://localhost:5000${announcement.ann_photo}`} 
+                src={`https://brngy-nzrth.onrender.com${announcement.ann_photo}`} 
                 alt={announcement.title} 
                 className="w-full h-full object-cover transition-transform duration-2000 group-hover:scale-110" 
               />

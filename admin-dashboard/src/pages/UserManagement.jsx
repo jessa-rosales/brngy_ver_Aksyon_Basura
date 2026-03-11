@@ -225,7 +225,7 @@ const UserManagement = () => {
             
             <div className={`${l.profileCircle} cursor-pointer hover:ring-4 hover:ring-green-100 transition-all overflow-hidden border border-gray-100`} onClick={() => navigate("/profile-settings")}>
               {adminUser.profile_picture ? (
-                <img src={`http://localhost:5000${adminUser.profile_picture}`} alt="Admin" className="w-full h-full object-cover" />
+                <img src={`https://brngy-nzrth.onrender.com${adminUser.profile_picture}`} alt="Admin" className="w-full h-full object-cover" />
               ) : (
                 <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${adminUser.first_name}`} alt="Admin" />
               )}
@@ -408,7 +408,7 @@ const ViewUserModal = ({ user, onClose }) => {
         {/* SIDEBAR */}
         <div className="w-full md:w-72 bg-slate-50 border-r border-slate-100 p-8 flex flex-col items-center">
           <div className="w-32 h-32 rounded-3xl border-4 border-white shadow-xl overflow-hidden bg-white mb-4">
-            <img src={user.profile_picture ? `http://localhost:5000${user.profile_picture}` : `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.first_name}`} className="w-full h-full object-cover" alt="Profile" />
+            <img src={user.profile_picture ? `https://brngy-nzrth.onrender.com${user.profile_picture}` : `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.first_name}`} className="w-full h-full object-cover" alt="Profile" />
           </div>
           <h3 className="text-xl font-bold text-slate-800 text-center leading-tight">{user.first_name} {user.last_name}</h3>
           <span className={`mt-3 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border ${roleStyles[user.role] || 'bg-slate-100'}`}>

@@ -1,4 +1,4 @@
-const BASE_URL = "http://localhost:5000/api/archive";
+const BASE_URL = "https://brngy-nzrth.onrender.com/api/archive";
 
 export const archiveService = {
   /**

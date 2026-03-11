@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 // Replace with your actual backend URL if different
-const API_URL = 'http://localhost:5000/api/public'; 
+const API_URL = 'https://brngy-nzrth.onrender.com/api/public'; 
 
 export const publicService = {
   getZones: async () => {

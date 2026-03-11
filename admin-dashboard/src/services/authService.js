@@ -1,4 +1,4 @@
-const BASE_URL = "http://localhost:5000/api/users";
+const BASE_URL = "https://brngy-nzrth.onrender.com/api/users";
 
 export const authService = {
   // 1. Login

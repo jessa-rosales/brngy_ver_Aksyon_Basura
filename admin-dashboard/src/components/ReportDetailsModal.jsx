@@ -74,11 +74,11 @@ const ReportDetailsModal = ({ isOpen, onClose, report, zone, onAssign, onResolve
             <div className="aspect-video bg-slate-100 rounded-[32px] overflow-hidden border border-slate-100 relative group">
                 {report.photo_evidence_url ? (
                   <img 
-                    src={`http://localhost:5000${report.photo_evidence_url}`} 
+                    src={`https://brngy-nzrth.onrender.com${report.photo_evidence_url}`} 
                     alt="Evidence" 
                     // ✅ FIXED: Added cursor-pointer and onClick handler
                     className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-transform duration-500"
-                    onClick={() => setSelectedImage(`http://localhost:5000${report.photo_evidence_url}`)}
+                    onClick={() => setSelectedImage(`https://brngy-nzrth.onrender.com${report.photo_evidence_url}`)}
                   />
                 ) : (
                   <div className="w-full h-full flex flex-col items-center justify-center text-slate-300">
@@ -183,11 +183,11 @@ const ReportDetailsModal = ({ isOpen, onClose, report, zone, onAssign, onResolve
                 {report.resolved_photo_url && (
                   <div className="mt-4 aspect-video bg-white rounded-[24px] overflow-hidden border border-emerald-100 relative group shadow-sm">
                     <img 
-                      src={`http://localhost:5000${report.resolved_photo_url}`} 
+                      src={`https://brngy-nzrth.onrender.com${report.resolved_photo_url}`} 
                       alt="Resolution Evidence" 
                       // ✅ FIXED: Added cursor-pointer and onClick handler
                       className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-transform duration-500"
-                      onClick={() => setSelectedImage(`http://localhost:5000${report.resolved_photo_url}`)}
+                      onClick={() => setSelectedImage(`https://brngy-nzrth.onrender.com${report.resolved_photo_url}`)}
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-emerald-900/60 to-transparent flex items-end p-5 pointer-events-none">
                       <p className="text-white text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
@@ -207,7 +207,7 @@ const ReportDetailsModal = ({ isOpen, onClose, report, zone, onAssign, onResolve
                   <div className="w-12 h-12 rounded-2xl bg-white border border-slate-200 flex items-center justify-center text-slate-400 shadow-sm overflow-hidden">
                       {report.profile_picture ? (
                         <img 
-                          src={`http://localhost:5000${report.profile_picture}`} 
+                          src={`https://brngy-nzrth.onrender.com${report.profile_picture}`} 
                           className="w-full h-full object-cover" 
                           alt="Profile" 
                         />

@@ -222,7 +222,7 @@ const AssignTask = () => {
               <p className="text-[10px] font-bold text-green-600 uppercase tracking-wider">{user.role}</p>
             </div>
             <div className={`${l.profileCircle} cursor-pointer hover:ring-4 hover:ring-green-100 transition-all overflow-hidden border border-gray-100`} onClick={() => navigate("/profile-settings")}>
-                {user.profile_picture ? <img src={`http://localhost:5000${user.profile_picture}`} alt="profile" className="w-full h-full object-cover" /> : <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${user.first_name}`} alt="profile" />}
+                {user.profile_picture ? <img src={`https://brngy-nzrth.onrender.com${user.profile_picture}`} alt="profile" className="w-full h-full object-cover" /> : <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${user.first_name}`} alt="profile" />}
             </div>
           </div>
         </div>

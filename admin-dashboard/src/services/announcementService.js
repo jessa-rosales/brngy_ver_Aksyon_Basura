@@ -1,4 +1,4 @@
-const BASE_URL = "http://localhost:5000/api/announcements";
+const BASE_URL = "https://brngy-nzrth.onrender.com/api/announcements";
 
 // ✅ Standardized Header Logic
 const getHeaders = () => ({

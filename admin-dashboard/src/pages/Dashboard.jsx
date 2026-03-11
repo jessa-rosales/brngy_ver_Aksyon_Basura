@@ -363,7 +363,7 @@ const Dashboard = () => {
           isReport: true, 
           type: 'Resolved Report', // Always 'Resolved Report' because we filtered purely for resolved photos
           title: report.issue_type,
-          photo: `http://localhost:5000${report.resolved_photo_url}`,
+          photo: `https://brngy-nzrth.onrender.com${report.resolved_photo_url}`,
           timestamp: report.resolved_at,
           zone: zoneName,
           collector: report.collector_name || 'Unknown Collector',
@@ -486,7 +486,7 @@ const Dashboard = () => {
               <p className="text-[10px] font-bold text-green-600 uppercase tracking-wider">{user.role}</p>
             </div>
             <div className={`${l.profileCircle} overflow-hidden border border-gray-100`} onClick={() => navigate("/profile-settings")}>
-              <img src={user.profile_picture ? `http://localhost:5000${user.profile_picture}` : `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.first_name}`} alt="Profile" className="w-full h-full object-cover" />
+              <img src={user.profile_picture ? `https://brngy-nzrth.onrender.com${user.profile_picture}` : `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.first_name}`} alt="Profile" className="w-full h-full object-cover" />
             </div>
           </div>
         </div>
@@ -649,7 +649,7 @@ const Dashboard = () => {
                         <div className="w-20 h-20 rounded-2xl overflow-hidden bg-slate-100 border border-slate-200 shadow-sm flex-shrink-0">
                           {report.photo_evidence_url ? (
                             <img 
-                              src={`http://localhost:5000${report.photo_evidence_url}`} 
+                              src={`https://brngy-nzrth.onrender.com${report.photo_evidence_url}`} 
                               alt="report" 
                               className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
                             />

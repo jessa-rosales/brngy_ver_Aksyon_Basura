@@ -1,4 +1,4 @@
-const BASE_URL = "http://localhost:5000/api/collections";
+const BASE_URL = "https://brngy-nzrth.onrender.com/api/collections";
 
 export const collectionService = {
   getCollectedBins: async () => {
@@ -21,7 +21,7 @@ export const collectionService = {
     archiveRecord: async (id) => {
     try {
         const token = localStorage.getItem("token");
-        const res = await fetch(`http://localhost:5000/api/collections/${id}/archive`, {
+        const res = await fetch(`https://brngy-nzrth.onrender.com/api/collections/${id}/archive`, {
         method: 'PATCH', // Using PATCH for soft-deletes
         headers: {
             "Content-Type": "application/json",

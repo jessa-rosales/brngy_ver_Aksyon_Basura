@@ -42,7 +42,7 @@ const CreateAnnouncementModal = ({ isOpen, onClose, onCreate, editData }) => {
         ann_photo: editData.ann_photo 
       });
       if (editData.ann_photo) {
-        setPreviewUrl(`http://localhost:5000${editData.ann_photo}`);
+        setPreviewUrl(`https://brngy-nzrth.onrender.com${editData.ann_photo}`);
       }
     } else if (!editData && isOpen) {
       setFormData(initialFormState);

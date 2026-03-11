@@ -1,4 +1,4 @@
-const API_URL = 'http://localhost:5000/api/assignments';
+const API_URL = 'https://brngy-nzrth.onrender.com/api/assignments';
 
 // ✅ Standardized Authorization Headers
 const getHeaders = () => ({
@@ -48,7 +48,7 @@ export const assignmentService = {
 deleteAssignment: async (id) => {
   try {
     const token = localStorage.getItem('token'); // Get token for auth
-    const response = await fetch(`http://localhost:5000/api/assignments/${id}`, {
+    const response = await fetch(`https://brngy-nzrth.onrender.com/api/assignments/${id}`, {
       method: 'DELETE',
       headers: {
         'Authorization': `Bearer ${token}`,

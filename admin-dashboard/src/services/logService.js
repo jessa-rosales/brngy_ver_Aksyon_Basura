@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_URL = 'http://localhost:5000/api/logs'; 
+const API_URL = 'https://brngy-nzrth.onrender.com/api/logs'; 
 
 export const logService = {
   getAllDutyLogs: async () => {

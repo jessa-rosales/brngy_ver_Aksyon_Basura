@@ -139,7 +139,7 @@ const ProfileSettings = () => {
             </div>
             <div className={l.profileCircle}>
               {adminUser?.profile_picture ? (
-                <img src={`http://localhost:5000${adminUser.profile_picture}`} alt="Admin" className="w-full h-full object-cover" />
+                <img src={`https://brngy-nzrth.onrender.com${adminUser.profile_picture}`} alt="Admin" className="w-full h-full object-cover" />
               ) : (
                 <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${adminUser?.first_name || 'Admin'}`} alt="Admin" />
               )}
@@ -161,7 +161,7 @@ const ProfileSettings = () => {
               <div className="relative group">
                 <div className="w-32 h-32 rounded-full overflow-hidden border-4 border-green-50 shadow-sm bg-gray-50">
                   {adminUser?.profile_picture ? (
-                    <img src={`http://localhost:5000${adminUser.profile_picture}`} alt="Avatar" className="w-full h-full object-cover" />
+                    <img src={`https://brngy-nzrth.onrender.com${adminUser.profile_picture}`} alt="Avatar" className="w-full h-full object-cover" />
                   ) : (
                     <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${adminUser?.first_name}`} alt="Avatar" />
                   )}
