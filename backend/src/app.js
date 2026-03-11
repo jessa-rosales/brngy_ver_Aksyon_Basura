@@ -18,16 +18,14 @@ const publicRoutes = require('./routes/publicRoutes');
 const app = express();
 
 // ✅ UPDATED CORS: This allows your Vercel site to talk to your Render backend
+// This allows EVERYTHING. We do this just to test if the connection works.
 app.use(cors({
-    origin: [
-        'https://brngy-nzrth.vercel.app', // Your live Vercel link
-        'http://localhost:5173',          // Local Vite
-        'http://localhost:3000'           // Local React
-    ],
+    origin: '*', 
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    credentials: true,
     allowedHeaders: ['Content-Type', 'Authorization']
 }));
+
+app.options('*', cors()); // Enable pre-flight for all routes
 
 app.use(express.json());
 
