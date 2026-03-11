@@ -1,4 +1,5 @@
 const pool = require("../db");
+const zoneModel = require("../models/zoneModel"); // ✅ IMPORT THE ZONE MODEL
 
 const archiveController = {
   getArchivedItems: async (req, res) => {
@@ -26,12 +27,27 @@ const archiveController = {
           break;
         case "tasks":
           query = `
-            SELECT a.*, u.first_name, u.last_name, v.vehicle_name, z.zone_name 
+            SELECT 
+                a.task_id, a.driver_id, a.vehicle_id, a.zone_id,
+                u.first_name, u.last_name,
+                v.vehicle_name,
+                v.plate_number,
+                v.status AS truck_status,
+                a.status AS assignment_status, 
+                z.zone_name,
+                a.work_days, a.start_date, a.end_date,
+                TO_CHAR(a.start_time, 'HH24:MI') as start_time, 
+                TO_CHAR(a.end_time, 'HH24:MI') as end_time,
+                (SELECT ARRAY_AGG(usr.first_name || ' ' || usr.last_name) 
+                 FROM task_collectors tc 
+                 JOIN users usr ON tc.collector_id = usr.user_id 
+                 WHERE tc.task_id = a.task_id) as collector_names
             FROM task_assignments a
             LEFT JOIN users u ON a.driver_id = u.user_id
             LEFT JOIN vehicles v ON a.vehicle_id = v.vehicle_id
             LEFT JOIN zones z ON a.zone_id = z.zone_id
-            WHERE a.is_archived = true ORDER BY a.task_id DESC
+            WHERE a.is_archived = true 
+            ORDER BY a.task_id DESC
           `;
           break;
         case "vehicles":
@@ -52,7 +68,6 @@ const archiveController = {
             ORDER BY a.date_published DESC
           `;
           break;
-        break;
         case "users":
           query = "SELECT * FROM users WHERE is_archived = true ORDER BY user_id DESC";
           break;
@@ -77,19 +92,18 @@ const archiveController = {
             ORDER BY cr.timestamp DESC;
           `;
           break;
-          // ✅ Add this new case for fetching archived waste bins
-          case "waste_bins":
-            query = `
-              SELECT w.*, z.zone_name 
-              FROM waste_bins w 
-              LEFT JOIN zones z ON w.zone_id = z.zone_id 
-              WHERE w.is_archived = true 
-              ORDER BY w.bin_id ASC
-            `;
-            break;
-          default:
-            return res.status(400).json({ message: "Invalid category" });
-        }
+        case "waste_bins":
+          query = `
+            SELECT w.*, z.zone_name 
+            FROM waste_bins w 
+            LEFT JOIN zones z ON w.zone_id = z.zone_id 
+            WHERE w.is_archived = true 
+            ORDER BY w.bin_id ASC
+          `;
+          break;
+        default:
+          return res.status(400).json({ message: "Invalid category" });
+      }
 
       const result = await pool.query(query);
 
@@ -119,26 +133,41 @@ const archiveController = {
 
   restoreItem: async (req, res) => {
     const { category, id } = req.params;
-    let table = "";
-    let pk = "";
-
-    switch (category) {
-      case "reports": table = "citizen_reports"; pk = "report_id"; break;
-      case "tasks": table = "task_assignments"; pk = "task_id"; break;
-      case "vehicles": table = "vehicles"; pk = "vehicle_id"; break;
-      case "zones": table = "zones"; pk = "zone_id"; break;
-      case "announcements": table = "announcements"; pk = "announcement_id"; break;
-      case "users": table = "users"; pk = "user_id"; break;
-      case "bins": table = "collection_records"; pk = "record_id"; break;
-      // ✅ Add this new case for restoring waste bins
-      case "waste_bins": 
-        table = "waste_bins"; 
-        pk = "bin_id"; 
-        break;
-      default: return res.status(400).json({ message: "Invalid category" });
-    }
 
     try {
+      // ✅ CASCADING RESTORE: Intercept 'zones' category to restore the zone AND its bins
+      if (category === 'zones') {
+        const restoredZone = await zoneModel.restoreZoneWithBins(id);
+        
+        if (!restoredZone) {
+          return res.status(404).json({ message: "Zone not found in archives" });
+        }
+        
+        return res.json({ 
+          success: true, 
+          message: "Zone and its associated bins restored successfully", 
+          item: restoredZone 
+        });
+      }
+
+      // Default logic for all other categories
+      let table = "";
+      let pk = "";
+
+      switch (category) {
+        case "reports": table = "citizen_reports"; pk = "report_id"; break;
+        case "tasks": table = "task_assignments"; pk = "task_id"; break;
+        case "vehicles": table = "vehicles"; pk = "vehicle_id"; break;
+        case "announcements": table = "announcements"; pk = "announcement_id"; break;
+        case "users": table = "users"; pk = "user_id"; break;
+        case "bins": table = "collection_records"; pk = "record_id"; break;
+        case "waste_bins": 
+          table = "waste_bins"; 
+          pk = "bin_id"; 
+          break;
+        default: return res.status(400).json({ message: "Invalid category" });
+      }
+
       const cleanId = category === "bins" ? id.toString().replace('COL-', '') : id;
 
       const query = `UPDATE ${table} SET is_archived = false WHERE ${pk} = $1 RETURNING *`;
