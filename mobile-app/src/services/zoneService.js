@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const BASE_URL = "http://localhost:5000/api";
+const BASE_URL = "https://brngy-nzrth.onrender.com/api";
+//const BASE_URL = "http://localhost:5000/api";
 
 // ✅ Updated to be Async for Mobile
 const getHeaders = async () => {
