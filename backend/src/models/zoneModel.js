@@ -87,5 +87,44 @@ const archiveZone = async (id) => {
   }
 };
 
-// ✅ Make sure archiveZone is exported
-module.exports = { createZone, getAllZones, updateZone, archiveZone };
+// ✅ NEW: Cascading Restore for Zone and its Bins
+const restoreZoneWithBins = async (id) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN'); // Start transaction
+
+    // 1. Restore the Zone itself
+    const zoneResult = await client.query(
+      "UPDATE zones SET is_archived = false WHERE zone_id = $1 RETURNING *",
+      [id]
+    );
+
+    if (zoneResult.rowCount === 0) {
+      await client.query('ROLLBACK');
+      return null;
+    }
+
+    // 2. Restore all Bins associated with this Zone
+    // ✅ This brings the bins back to the active map automatically
+    await client.query(
+      "UPDATE waste_bins SET is_archived = false WHERE zone_id = $1",
+      [id]
+    );
+
+    await client.query('COMMIT');
+    return zoneResult.rows[0];
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+};
+
+module.exports = { 
+  createZone, 
+  getAllZones, 
+  updateZone, 
+  archiveZone, 
+  restoreZoneWithBins // ✅ Add this to exports
+};
