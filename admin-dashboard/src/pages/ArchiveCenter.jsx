@@ -3,7 +3,7 @@ import {
   ArrowLeft, RotateCcw, Search, MessageSquare, 
   ClipboardList, Map, Megaphone, Users, Trash2,
   RefreshCw, Bell, ArrowUp, Truck, Clock, Calendar, 
-  MapPin, AlertTriangle, CheckCircle, Trash, LayoutGrid, List, User, RefreshCcw, FileText
+  MapPin, AlertTriangle, CheckCircle, Trash, LayoutGrid, List, User, RefreshCcw, FileText, Ban
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { design } from '../styles/design';
@@ -234,7 +234,7 @@ const ArchiveCenter = () => {
     </div>
   );
 
-  const renderTasks = () => (
+const renderTasks = () => (
     <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white">
       <table className="w-full text-left border-separate border-spacing-0">
         <thead>
@@ -243,31 +243,95 @@ const ArchiveCenter = () => {
             <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-200">Operational Team</th>
             <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-200">Fleet Asset</th>
             <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-200">Zone</th>
+            <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-200">Schedule Profile</th>
+            <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-200">Timeline</th>
             <th className="px-6 py-4 text-[10px] font-bold text-slate-500 uppercase tracking-widest border-b border-slate-200 text-right">Action</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
           {filteredData.map((row) => (
-            <tr key={row.task_id} className="bg-slate-50/50">
-              <td className="px-6 py-6 align-top font-mono text-[11px] font-semibold text-slate-400 line-through">#{row.task_id}</td>
-              <td className="px-6 py-6 align-top opacity-70">
-                <span className="text-[13px] font-black text-slate-600 block">{row.first_name} {row.last_name}</span>
-                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Lead Driver</span>
+            <tr key={row.task_id} className="bg-slate-50/50 group hover:bg-slate-100/50 transition-all duration-200">
+              
+              <td className="px-6 py-6 align-top font-mono text-[11px] font-semibold text-slate-400">
+                <span className="bg-slate-200/80 px-2 py-1 rounded line-through">#{row.task_id}</span>
               </td>
-              <td className="px-6 py-6 align-top opacity-70">
-                <div className="flex items-center gap-2 text-[12px] font-bold text-slate-600">
-                  <Truck size={14} className="text-slate-400" /> {row.vehicle_name}
+              
+              <td className="px-6 py-6 align-top opacity-80">
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-8 h-8 rounded-full bg-slate-400 flex items-center justify-center text-[11px] text-white font-black shadow-sm">
+                    {(row.first_name || 'U').charAt(0)}
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-[13px] font-black text-slate-500 leading-tight line-through">{row.first_name} {row.last_name}</span>
+                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-0.5">Lead Driver</span>
+                  </div>
+                </div>
+                <div className="pl-11 flex flex-wrap gap-1.5">
+                  {(row.collector_names || []).map((fullName, i) => (
+                    <div key={i} className="flex items-center gap-1.5 bg-white border border-slate-200 px-2.5 py-1 rounded-lg shadow-sm">
+                      <div className="w-1 h-1 rounded-full bg-slate-400" />
+                      <span className="text-[10px] font-bold text-slate-400 whitespace-nowrap line-through">{fullName}</span>
+                    </div>
+                  ))}
                 </div>
               </td>
-              <td className="px-6 py-6 align-top opacity-70">
-                <div className="flex items-center gap-2 text-[11px] font-bold text-slate-500 bg-slate-200 px-3 py-1.5 rounded-xl w-fit">
-                  <MapPin size={14} /> {row.zone_name}
+              
+              <td className="px-6 py-6 align-top opacity-80">
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex items-center gap-2 text-[12px] font-bold text-slate-600">
+                    <Truck size={14} className="text-slate-400" /> 
+                    <span className="line-through text-slate-500">{row.vehicle_name}</span>
+                    <span className="bg-rose-100 text-rose-700 border-rose-200 text-[8px] px-2 py-0.5 rounded-full font-black uppercase tracking-tighter border shadow-sm flex items-center gap-1">
+                      <Ban size={10} /> Archived
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-bold pl-5 tracking-widest uppercase w-fit px-1.5 rounded text-slate-400 bg-slate-100 border border-slate-200">
+                    {row.plate_number || '---'}
+                  </span>
                 </div>
               </td>
+              
+              <td className="px-6 py-6 align-top opacity-80">
+                <div className="flex items-center gap-2 text-[11px] font-bold text-slate-500 bg-slate-200/70 border border-slate-200 px-3 py-1.5 rounded-xl w-fit">
+                  <MapPin size={14} className="text-slate-400" /> <span className="line-through">{row.zone_name}</span>
+                </div>
+              </td>
+              
+              <td className="px-6 py-6 align-top opacity-80">
+                <div className="flex flex-col gap-3">
+                  <div className="flex -space-x-1">
+                      {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day, i) => {
+                        // Handle formatting since archive data might send stringified arrays
+                        const workDaysArray = typeof row.work_days === 'string' ? JSON.parse(row.work_days || '[]') : (row.work_days || []);
+                        const isActive = Array.isArray(workDaysArray) && workDaysArray.includes(day);
+                        return (
+                          <div key={i} className={`w-5 h-5 rounded-full border-2 border-white flex items-center justify-center text-[8px] font-black shadow-sm transition-all ${isActive ? 'bg-slate-400 text-white z-10 scale-110' : 'bg-slate-100 text-slate-300'}`}>
+                            {day.charAt(0)}
+                          </div>
+                        );
+                      })}
+                  </div>
+                  <div className="flex items-center gap-1.5 text-[11px] font-black text-slate-500">
+                    <Clock size={12} className="text-slate-400" /> {row.start_time || '--:--'} - {row.end_time || '--:--'}
+                  </div>
+                </div>
+              </td>
+              
+              <td className="px-6 py-6 align-top opacity-80">
+                <div className="flex flex-col gap-1">
+                    <p className="text-[10px] font-black text-slate-500 flex items-center gap-1.5 uppercase tracking-tighter">
+                      <Calendar size={12} className="text-slate-400" /> {row.start_date ? new Date(row.start_date).toLocaleDateString('en-GB') : 'N/A'}
+                    </p>
+                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5 pl-4.5">
+                      TO {row.end_date ? new Date(row.end_date).toLocaleDateString('en-GB') : '---'}
+                    </p>
+                </div>
+              </td>
+              
               <td className="px-6 py-6 text-right align-top">
-                  <button onClick={() => handleRestore(row.task_id)} className="px-4 py-2 bg-emerald-100 hover:bg-emerald-600 text-emerald-700 hover:text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ml-auto">
-                    <RotateCcw size={14} /> Restore
-                  </button>
+                <button onClick={() => handleRestore(row.task_id)} className="px-4 py-2 bg-emerald-100 hover:bg-emerald-600 text-emerald-700 hover:text-white rounded-lg text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ml-auto shadow-sm">
+                  <RotateCcw size={14} /> Restore
+                </button>
               </td>
             </tr>
           ))}
