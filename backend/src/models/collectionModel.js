@@ -26,7 +26,7 @@ exports.getAllCollectedBins = async () => {
   // Format the data for the frontend React component
   return rows.map(row => ({
     id: `COL-${row.id}`,
-    photoUrl: row.photoUrl ? `http://localhost:5000${row.photoUrl}` : null,
+    photoUrl: row.photoUrl ? `https://brngy-nzrth.onrender.com${row.photoUrl}` : null,
     binId: `BIN-${row.binId}`,
     binName: row.binName,
     binAddress: row.binAddress || 'Address not specified',
