@@ -1,10 +1,10 @@
 require('dotenv').config(); 
 const express = require('express');
 const cors = require('cors');
-const path = require('path'); 
+const path = require('path'); // ✅ Add this
 const userRoutes = require('./routes/userRoutes');
 const zoneRoutes = require('./routes/zoneRoutes');
-const announcementRoutes = require('./routes/announcementRoutes'); 
+const announcementRoutes = require('./routes/announcementRoutes'); // ✅ Import here
 const assignmentRoutes = require('./routes/assignmentRoutes');
 const vehicleRoutes = require('./routes/vehicleRoutes');
 const reportRoutes = require('./routes/reportRoutes');
@@ -13,26 +13,18 @@ const collectionRoutes = require('./routes/collectionRoutes');
 const archiveRoutes = require('./routes/archiveRoutes');
 const vehicleTrackingRoutes = require('./routes/vehicleTrackingRoutes');
 const logRoutes = require('./routes/logRoutes');
-const publicRoutes = require('./routes/publicRoutes'); 
+const analyticsRoutes = require('./routes/analyticsRoutes');
+
+const publicRoutes = require('./routes/publicRoutes'); //for landingpage public view
+
 
 const app = express();
-
-// ✅ UPDATED CORS: This allows your Vercel site to talk to your Render backend
-// This allows EVERYTHING. We do this just to test if the connection works.
-app.use(cors({
-    origin: '*', 
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization']
-}));
-
-app.options('*', cors()); // Enable pre-flight for all routes
-
+app.use(cors());
 app.use(express.json());
 
-// ✅ SERVE IMAGES
+// ✅ SERVE IMAGES: This makes http://localhost:5000/uploads/filename.jpg work
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// ✅ ROUTES
 app.use('/api/collections', collectionRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/zones', zoneRoutes);
@@ -45,7 +37,9 @@ app.use('/api/vehicles', vehicleRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/mobile', mobileRoutes);
 app.use('/api/archive', archiveRoutes);
-app.use('/api/public', publicRoutes); 
+
+app.use('/api/public', publicRoutes); // Mount the public routes
+app.use('/api/analytics', analyticsRoutes);
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
