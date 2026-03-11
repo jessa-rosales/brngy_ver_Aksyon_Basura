@@ -206,7 +206,7 @@ const CollectedBins = () => {
               <p className="text-[10px] font-bold text-green-600 uppercase tracking-wider">{user.role}</p>
             </div>
             <div className={`${l.profileCircle} overflow-hidden border border-gray-100`} onClick={() => navigate("/profile-settings")}>
-              <img src={user.profile_picture ? `https://brngy-nzrth.onrender.com${user.profile_picture}` : `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.first_name}`} alt="Admin" className="w-full h-full object-cover" />
+              <img src={user.profile_picture ? `http://localhost:5000${user.profile_picture}` : `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.first_name}`} alt="Admin" className="w-full h-full object-cover" />
             </div>
           </div>
         </div>

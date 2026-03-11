@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { 
   Search, Bell, Map as MapIcon, Inbox, X, ArrowUp, Trash2, 
   ChevronDown, AlertCircle, Clock, ChevronRight, Image as ImageIcon,
-  Flame, AlertOctagon, MapPin, BarChart3, TrendingUp
+  Flame, AlertOctagon, MapPin, BarChart3, TrendingUp, FileText // ✅ ADDED FileText icon
 } from 'lucide-react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -363,7 +363,7 @@ const Dashboard = () => {
           isReport: true, 
           type: 'Resolved Report', // Always 'Resolved Report' because we filtered purely for resolved photos
           title: report.issue_type,
-          photo: `https://brngy-nzrth.onrender.com${report.resolved_photo_url}`,
+          photo: `http://localhost:5000${report.resolved_photo_url}`,
           timestamp: report.resolved_at,
           zone: zoneName,
           collector: report.collector_name || 'Unknown Collector',
@@ -486,16 +486,28 @@ const Dashboard = () => {
               <p className="text-[10px] font-bold text-green-600 uppercase tracking-wider">{user.role}</p>
             </div>
             <div className={`${l.profileCircle} overflow-hidden border border-gray-100`} onClick={() => navigate("/profile-settings")}>
-              <img src={user.profile_picture ? `https://brngy-nzrth.onrender.com${user.profile_picture}` : `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.first_name}`} alt="Profile" className="w-full h-full object-cover" />
+              <img src={user.profile_picture ? `http://localhost:5000${user.profile_picture}` : `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.first_name}`} alt="Profile" className="w-full h-full object-cover" />
             </div>
           </div>
         </div>
       </header>
 
       <main className="p-8 space-y-8">
-        <div className="-mt-5">
-          <h2 className="text-2xl font-bold text-[#1B5E20]">Dashboard Overview</h2>
-          <p className="text-gray-600 text-sm">Real-time waste collection monitoring and management</p>
+        {/* ✅ UPDATED TO NAVIGATE TO PREVIEW PAGE */}
+        <div className="-mt-5 flex flex-wrap justify-between items-end gap-4">
+          <div>
+            <h2 className="text-2xl font-bold text-[#1B5E20]">Dashboard Overview</h2>
+            <p className="text-gray-600 text-sm">Real-time waste collection monitoring and management</p>
+          </div>
+          
+          <div className="flex gap-2">
+            <button 
+              onClick={() => navigate('/reports-preview')}
+              className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 text-white font-bold text-sm rounded-xl hover:bg-emerald-700 transition-all shadow-md hover:shadow-lg"
+            >
+              <FileText size={16} /> PDF Reports
+            </button>
+          </div>
         </div>
 
         {/* KPI CARDS */}
@@ -649,7 +661,7 @@ const Dashboard = () => {
                         <div className="w-20 h-20 rounded-2xl overflow-hidden bg-slate-100 border border-slate-200 shadow-sm flex-shrink-0">
                           {report.photo_evidence_url ? (
                             <img 
-                              src={`https://brngy-nzrth.onrender.com${report.photo_evidence_url}`} 
+                              src={`http://localhost:5000${report.photo_evidence_url}`} 
                               alt="report" 
                               className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
                             />

@@ -2,7 +2,8 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import CloseSidebar from './components/CloseSidebar';
 import LandingPage from './pages/LandingPage';
 import Login from './pages/Login';
-import Dashboard from './pages/Dashboard'; 
+import Dashboard from './pages/Dashboard';
+import ReportPreview from './pages/ReportPreview'; 
 import CollectedBins from './pages/CollectedBins';
 import VehicleTracking from './pages/VehicleTracking';
 import CitizenReports from './pages/CitizenReports';
@@ -51,6 +52,8 @@ function App() {
           <Route path="/dashboard" element={
             <AdminRoute><CloseSidebar><Dashboard /></CloseSidebar></AdminRoute>
           } />
+
+          <Route path="/reports-preview" element={<ReportPreview />} />
 
           <Route path="/bins" element={
             <AdminRoute><CloseSidebar><CollectedBins /></CloseSidebar></AdminRoute>

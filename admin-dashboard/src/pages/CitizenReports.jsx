@@ -272,7 +272,7 @@ const CitizenReports = () => {
               <p className="text-[10px] font-bold text-green-600 uppercase tracking-wider">{user.role}</p>
             </div>
             <div className={`${l.profileCircle} overflow-hidden border border-gray-100`} onClick={() => navigate("/profile-settings")}>
-              <img src={user.profile_picture ? `https://brngy-nzrth.onrender.com${user.profile_picture}` : `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.first_name}`} alt="Admin" className="w-full h-full object-cover" />
+              <img src={user.profile_picture ? `http://localhost:5000${user.profile_picture}` : `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.first_name}`} alt="Admin" className="w-full h-full object-cover" />
             </div>
           </div>
         </div>
@@ -367,7 +367,7 @@ const CitizenReports = () => {
                   <div className="p-5 flex items-center justify-between border-b border-slate-50">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-full overflow-hidden border-2 border-emerald-100 shadow-sm">
-                        <img src={item.profile_picture ? `https://brngy-nzrth.onrender.com${item.profile_picture}` : `https://api.dicebear.com/7.x/initials/svg?seed=${item.reporter_name}`} alt="avatar" className="w-full h-full object-cover" />
+                        <img src={item.profile_picture ? `http://localhost:5000${item.profile_picture}` : `https://api.dicebear.com/7.x/initials/svg?seed=${item.reporter_name}`} alt="avatar" className="w-full h-full object-cover" />
                       </div>
                       <div>
                         <p className="text-sm font-black text-slate-800 leading-tight">{item.reporter_name}</p>
@@ -386,7 +386,7 @@ const CitizenReports = () => {
 
                   <div className="aspect-video bg-slate-100 flex items-center justify-center relative overflow-hidden">
                     {item.photo_evidence_url ? (
-                      <img src={`https://brngy-nzrth.onrender.com${item.photo_evidence_url}`} alt="Evidence" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
+                      <img src={`http://localhost:5000${item.photo_evidence_url}`} alt="Evidence" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" />
                     ) : (
                       <AlertTriangle size={40} className="text-slate-300 opacity-20" />
                     )}

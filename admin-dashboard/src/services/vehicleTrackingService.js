@@ -1,4 +1,4 @@
-const BASE_URL = "https://brngy-nzrth.onrender.com/api";
+const BASE_URL = "http://localhost:5000/api";
 
 const getHeaders = () => ({
   "Content-Type": "application/json",

@@ -197,7 +197,7 @@ const Announcement = () => {
             
             <div className={`${l.profileCircle} cursor-pointer hover:ring-4 hover:ring-green-100 transition-all overflow-hidden border border-gray-100`} onClick={() => navigate("/profile-settings")}>
               {user.profile_picture ? (
-                <img src={`https://brngy-nzrth.onrender.com${user.profile_picture}`} alt="Profile" className="w-full h-full object-cover" />
+                <img src={`http://localhost:5000${user.profile_picture}`} alt="Profile" className="w-full h-full object-cover" />
               ) : (
                 <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${user.first_name}`} alt="Avatar" />
               )}
@@ -294,7 +294,7 @@ const Announcement = () => {
               <div key={item.announcement_id} onClick={() => handleCardClick(item)} className="bg-white rounded-xl shadow-sm overflow-hidden flex flex-col group cursor-pointer hover:shadow-md transition-all border border-gray-50">
                 <div className="aspect-video bg-gray-200 w-full relative overflow-hidden shrink-0">
                   {item.ann_photo ? (
-                    <img src={`https://brngy-nzrth.onrender.com${item.ann_photo}`} alt="ann" className="w-full h-full object-cover transition-transform group-hover:scale-105" />
+                    <img src={`http://localhost:5000${item.ann_photo}`} alt="ann" className="w-full h-full object-cover transition-transform group-hover:scale-105" />
                   ) : (
                     <div className="w-full h-full flex flex-col items-center justify-center text-gray-300 bg-gray-50">
                        <Megaphone size={40} className="mb-2 opacity-20" />

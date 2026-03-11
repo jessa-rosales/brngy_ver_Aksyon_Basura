@@ -1,4 +1,4 @@
-const API_URL = "https://brngy-nzrth.onrender.com/api";
+const API_URL = "http://localhost:5000/api";
 
 export const reportService = {
   // 1. Fetch all reports
@@ -58,7 +58,7 @@ export const reportService = {
     const token = localStorage.getItem('token'); 
 
     try {
-      const response = await fetch(`https://brngy-nzrth.onrender.com/api/reports/${reportId}/assign`, {
+      const response = await fetch(`http://localhost:5000/api/reports/${reportId}/assign`, {
         method: 'PUT',
         headers: { 
           'Content-Type': 'application/json',
