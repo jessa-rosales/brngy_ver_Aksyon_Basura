@@ -52,39 +52,12 @@ const updateZone = async (id, zone_name, zone_color, boundaries) => {
   return result.rows[0];
 };
 // ✅ ADD THIS FUNCTION: Soft Delete
-// ✅ FIXED: Cascading Soft Delete for Zone and its Bins
 const archiveZone = async (id) => {
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN'); // Start transaction to ensure data integrity
-
-    // 1. Archive the Zone itself
-    // FIXED: Removed the extra comma before [id]
-    const zoneResult = await client.query(
-      "UPDATE zones SET is_archived = true WHERE zone_id = $1 RETURNING *",
-      [id]
-    );
-
-    if (zoneResult.rowCount === 0) {
-      await client.query('ROLLBACK');
-      return null;
-    }
-
-    // 2. Archive all Bins associated with this specific Zone
-    // FIXED: Removed the extra comma before [id]
-    await client.query(
-      "UPDATE waste_bins SET is_archived = true WHERE zone_id = $1",
-      [id]
-    );
-
-    await client.query('COMMIT'); // Save both changes
-    return zoneResult.rows[0];
-  } catch (err) {
-    await client.query('ROLLBACK'); // Cancel everything if an error occurs
-    throw err;
-  } finally {
-    client.release();
-  }
+  const result = await pool.query(
+    "UPDATE zones SET is_archived = true WHERE zone_id = $1 RETURNING *",
+    [id]
+  );
+  return result.rows[0];
 };
 
 // ✅ Make sure archiveZone is exported
